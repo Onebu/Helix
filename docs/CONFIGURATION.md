@@ -1,10 +1,11 @@
 # Configuration Guide
 
-Helix uses a three-layer configuration cascade (highest priority first):
+Helix is configured through environment variables (`.env` file) and the **Settings UI** in the web interface.
 
-1. **Constructor args / CLI flags** — override everything
-2. **Environment variables** — `GENE_` prefix
-3. **gene.yaml file** — lowest priority defaults
+- **`.env` file** — API keys, database URL, default models (set once at startup)
+- **Settings UI** — API keys, model/provider per role, temperature, concurrency (editable at runtime)
+- **Config tab** — per-prompt model and inference overrides
+- **Evolution tab** — per-run parameter overrides
 
 ## Quick Start
 
@@ -128,29 +129,6 @@ Optional — for cold-start trace import only.
 |----------|-------------|---------|
 | `GENE_CONCURRENCY_LIMIT` | Max concurrent LLM calls | `10` |
 | `GENE_PROMPTS_DIR` | Directory for prompt files | `./prompts` |
-
-## gene.yaml
-
-Alternative to environment variables. Place at project root:
-
-```yaml
-gemini_api_key: your-key-here
-
-meta_model: gemini-2.5-flash
-meta_provider: gemini
-target_model: gemini-3-flash-preview
-target_provider: gemini
-judge_model: gemini-2.5-flash
-judge_provider: gemini
-
-database_url: sqlite+aiosqlite:///helix.db
-
-generation:
-  temperature: 0.7
-  max_tokens: 4096
-```
-
-Environment variables override gene.yaml values.
 
 ## Docker Configuration
 
