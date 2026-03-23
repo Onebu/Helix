@@ -37,6 +37,7 @@ Dockerfile
 # Docs
 docs/
 *.md
+!README.md
 
 # Claude Code
 .claude/
