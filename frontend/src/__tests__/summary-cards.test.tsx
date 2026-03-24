@@ -20,7 +20,7 @@ describe('SummaryCards', () => {
     expect(screen.getByText('Best Fitness')).toBeInTheDocument()
     expect(screen.getByText('Seed Fitness')).toBeInTheDocument()
     expect(screen.getByText('Improvement')).toBeInTheDocument()
-    expect(screen.getByText('Termination')).toBeInTheDocument()
+    expect(screen.getByText('Stop Reason')).toBeInTheDocument()
     expect(screen.getByText('Lineage Events')).toBeInTheDocument()
     expect(screen.getByText('Total Cost')).toBeInTheDocument()
   })
@@ -61,7 +61,7 @@ describe('SummaryCards', () => {
       expect(screen.getByText('Best Fitness')).toBeInTheDocument()
       expect(screen.getByText('Seed Fitness')).toBeInTheDocument()
       expect(screen.getByText('Improvement')).toBeInTheDocument()
-      expect(screen.getByText('Termination')).toBeInTheDocument()
+      expect(screen.getByText('Stop Reason')).toBeInTheDocument()
       expect(screen.getByText('Lineage Events')).toBeInTheDocument()
       expect(screen.getByText('Total Cost')).toBeInTheDocument()
 

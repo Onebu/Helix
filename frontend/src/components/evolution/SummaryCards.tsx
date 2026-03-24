@@ -50,7 +50,7 @@ export default function SummaryCards({ data }: SummaryCardsProps) {
       borderClass: 'border-l-blue-400',
     },
     {
-      label: t('evolution.termination'),
+      label: t('evolution.stopReason'),
       value: (() => {
         const r = data.terminationReason
         if (!r) return t('evolution.running')

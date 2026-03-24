@@ -156,4 +156,29 @@ describe('CaseResultsGrid', () => {
     expect(screen.getByText(/2 passed/i)).toBeInTheDocument()
     expect(screen.getByText(/1 failed/i)).toBeInTheDocument()
   })
+
+  it('displays test case name instead of UUID when caseNames map is provided', () => {
+    const uuid = '550e8400-e29b-41d4-a716-446655440000'
+    const cases: CaseResultData[] = [makeCase({ caseId: uuid, tier: 'normal', passed: true })]
+    const caseNames = new Map([[uuid, 'My Friendly Test Name']])
+    render(<CaseResultsGrid caseResults={cases} caseNames={caseNames} />)
+    expect(screen.getByText('My Friendly Test Name')).toBeInTheDocument()
+    expect(screen.queryByText(uuid)).not.toBeInTheDocument()
+  })
+
+  it('falls back to caseId when no caseNames provided', () => {
+    const uuid = '550e8400-e29b-41d4-a716-446655440000'
+    const cases: CaseResultData[] = [makeCase({ caseId: uuid, tier: 'normal', passed: true })]
+    render(<CaseResultsGrid caseResults={cases} />)
+    expect(screen.getByText(uuid)).toBeInTheDocument()
+  })
+
+  it('adds title attribute with full reason text to reason cell', () => {
+    const longReason = 'This is a very long reason that definitely exceeds the fifty character truncation limit used in the display'
+    const cases: CaseResultData[] = [makeCase({ caseId: 'reason-case', reason: longReason })]
+    render(<CaseResultsGrid caseResults={cases} />)
+    const row = screen.getByText('reason-case').closest('tr')
+    const reasonCell = row?.querySelector('td:last-child')
+    expect(reasonCell).toHaveAttribute('title', longReason)
+  })
 })

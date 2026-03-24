@@ -6,6 +6,7 @@ import { scoreColor } from '../../lib/scoring'
 interface CaseResultsGridProps {
   caseResults: CaseResultData[]
   seedCaseResults?: CaseResultData[]
+  caseNames?: Map<string, string>
 }
 
 const TIER_STYLES: Record<string, string> = {
@@ -186,6 +187,7 @@ function DetailPanel({
 export default function CaseResultsGrid({
   caseResults,
   seedCaseResults = [],
+  caseNames,
 }: CaseResultsGridProps) {
   const { t } = useTranslation()
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
@@ -295,8 +297,8 @@ export default function CaseResultsGrid({
                       idx % 2 === 0 ? 'bg-slate-800/50' : 'bg-slate-900/30'
                     } hover:bg-slate-700/30`}
                   >
-                    <td className="px-4 py-3 font-mono text-sm text-slate-300">
-                      {c.caseId}
+                    <td className="px-4 py-3 text-sm text-slate-300" title={c.caseId}>
+                      {caseNames?.get(c.caseId) ?? c.caseId}
                     </td>
                     <td className="px-4 py-3">
                       <span
@@ -318,7 +320,7 @@ export default function CaseResultsGrid({
                     >
                       {c.score.toFixed(3)}
                     </td>
-                    <td className="px-4 py-3 text-sm text-slate-400">
+                    <td className="px-4 py-3 text-sm text-slate-400" title={c.reason}>
                       <span className={`mr-1 font-semibold ${c.passed ? 'text-emerald-400' : 'text-red-400'}`}>
                         {c.passed ? '[PASS]' : '[FAIL]'}
                       </span>

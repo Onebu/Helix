@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEvolutionSocket } from '../../hooks/useEvolutionSocket'
 import { useRunResults } from '../../hooks/useRunResults'
-import { getRunStatusApiEvolutionRunIdStatusGet, acceptVersionApiPromptsPromptIdVersionsAcceptPost } from '../../client/sdk.gen'
+import { getRunStatusApiEvolutionRunIdStatusGet, acceptVersionApiPromptsPromptIdVersionsAcceptPost, listCasesApiPromptsPromptIdDatasetGet } from '../../client/sdk.gen'
 import type { EvolutionRunStatus, PromptVersionResponse } from '../../client/types.gen'
 import type { EvolutionStatus, SummaryData, GenerationData, CandidateData, LineageNode } from '../../types/evolution'
 import { Badge } from '@/components/ui/badge'
@@ -146,6 +146,21 @@ export default function EvolutionDashboard({ runId }: EvolutionDashboardProps) {
 
   // Accept as new version
   const promptId = results?.promptId ?? null
+
+  // Fetch test case names for the prompt so we can display them instead of UUIDs
+  const { data: testCasesResp } = useQuery({
+    queryKey: ['dataset-cases', promptId],
+    queryFn: () => listCasesApiPromptsPromptIdDatasetGet({ path: { prompt_id: promptId! } }),
+    enabled: !!promptId,
+    staleTime: 5 * 60 * 1000,
+  })
+  const caseNames = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const tc of testCasesResp?.data ?? []) {
+      if (tc.name) map.set(tc.id, tc.name)
+    }
+    return map
+  }, [testCasesResp])
   const [acceptedVersion, setAcceptedVersion] = useState<number | null>(null)
   const [acceptError, setAcceptError] = useState<string | null>(null)
 
@@ -400,6 +415,7 @@ export default function EvolutionDashboard({ runId }: EvolutionDashboardProps) {
               <CaseResultsGrid
                 caseResults={results?.caseResults ?? []}
                 seedCaseResults={results?.seedCaseResults ?? []}
+                caseNames={caseNames}
               />
             </div>
           )}
