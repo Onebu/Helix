@@ -400,12 +400,16 @@ class PromptRegistry:
         Inserts a new PromptVersion row with version = max(existing) + 1,
         sets it as the active version, and updates Prompt.template.
 
+        Idempotent: if the latest version already has the same template,
+        returns it instead of creating a duplicate.
+
         Args:
             prompt_id: The prompt identifier.
             template: The template text for the new version.
 
         Returns:
-            Dict with version number, template text, and created_at ISO string.
+            Dict with version number, template text, created_at ISO string,
+            and ``already_existed`` boolean.
 
         Raises:
             PromptNotFoundError: If the prompt does not exist.
@@ -418,6 +422,29 @@ class PromptRegistry:
             prompt_row = result.scalar_one_or_none()
             if prompt_row is None:
                 raise PromptNotFoundError(f"Prompt '{prompt_id}' not found")
+
+            # Check if the latest version already has the same template
+            latest = await session.execute(
+                select(PromptVersion)
+                .where(PromptVersion.prompt_id == prompt_id)
+                .order_by(PromptVersion.version.desc())
+                .limit(1)
+            )
+            latest_row = latest.scalar_one_or_none()
+            if latest_row is not None and latest_row.template == template:
+                logger.info(
+                    "Version %d for prompt '%s' already matches, skipping duplicate",
+                    latest_row.version,
+                    prompt_id,
+                )
+                return {
+                    "version": latest_row.version,
+                    "template": template,
+                    "created_at": latest_row.created_at.isoformat()
+                    if latest_row.created_at
+                    else datetime.now(UTC).isoformat(),
+                    "already_existed": True,
+                }
 
             # Create next version and set as active
             new_ver = await self._create_next_version(session, prompt_id, template)
@@ -435,6 +462,7 @@ class PromptRegistry:
                 "version": new_ver,
                 "template": template,
                 "created_at": datetime.now(UTC).isoformat(),
+                "already_existed": False,
             }
 
     async def list_versions(self, prompt_id: str) -> list[dict]:

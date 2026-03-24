@@ -616,6 +616,7 @@ class PromptVersionResponse(BaseModel):
     template: str
     created_at: str
     is_active: bool
+    already_existed: bool = False
 
 
 class AcceptVersionRequest(BaseModel):

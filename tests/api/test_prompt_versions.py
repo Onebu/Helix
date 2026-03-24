@@ -353,6 +353,55 @@ class TestAcceptVersionEndpoint:
         assert resp3.json()["version"] == 3
 
 
+class TestAcceptVersionIdempotent:
+    """Accepting the same template twice does not create a duplicate version."""
+
+    async def test_accept_same_template_returns_existing(self, client):
+        """Second accept with the same template returns the existing version."""
+        await _register_prompt(client, "ep-idem", "Template v1")
+
+        resp1 = await client.post(
+            "/api/prompts/ep-idem/versions/accept",
+            json={"template": "Evolved template"},
+        )
+        assert resp1.status_code == 201
+        data1 = resp1.json()
+        assert data1["version"] == 2
+        assert data1["already_existed"] is False
+
+        # Accept again with the same template
+        resp2 = await client.post(
+            "/api/prompts/ep-idem/versions/accept",
+            json={"template": "Evolved template"},
+        )
+        assert resp2.status_code == 201
+        data2 = resp2.json()
+        assert data2["version"] == 2  # Same version, not 3
+        assert data2["already_existed"] is True
+
+        # Verify only 2 versions exist
+        resp_list = await client.get("/api/prompts/ep-idem/versions")
+        versions = resp_list.json()
+        assert len(versions) == 2
+
+    async def test_accept_different_template_creates_new(self, client):
+        """Accept with a different template creates a new version normally."""
+        await _register_prompt(client, "ep-diff", "Template v1")
+
+        resp1 = await client.post(
+            "/api/prompts/ep-diff/versions/accept",
+            json={"template": "Evolved v2"},
+        )
+        assert resp1.json()["version"] == 2
+
+        resp2 = await client.post(
+            "/api/prompts/ep-diff/versions/accept",
+            json={"template": "Evolved v3"},
+        )
+        assert resp2.json()["version"] == 3
+        assert resp2.json()["already_existed"] is False
+
+
 class TestRunResultsPromptId:
     """GET /api/history/run/by-uuid/{uuid}/results includes prompt_id."""
 

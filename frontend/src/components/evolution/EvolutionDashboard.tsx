@@ -156,12 +156,15 @@ export default function EvolutionDashboard({ runId }: EvolutionDashboardProps) {
         body: { template },
       }),
     onSuccess: (resp) => {
-      const ver = (resp.data as PromptVersionResponse)?.version
+      const data = resp.data as PromptVersionResponse & { already_existed?: boolean }
+      const ver = data?.version
       setAcceptedVersion(ver ?? -1)
       setAcceptError(null)
-      // Invalidate version queries so VersionHistory refreshes
-      queryClient.invalidateQueries({ queryKey: ['prompt-versions', promptId] })
-      queryClient.invalidateQueries({ queryKey: ['prompts', promptId] })
+      // Only invalidate if a new version was actually created
+      if (!data?.already_existed) {
+        queryClient.invalidateQueries({ queryKey: ['prompt-versions', promptId] })
+        queryClient.invalidateQueries({ queryKey: ['prompts', promptId] })
+      }
     },
     onError: (err) => {
       setAcceptError(err instanceof Error ? err.message : 'Failed to accept version')
