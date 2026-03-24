@@ -68,6 +68,13 @@ const PROVIDER_KEY_FIELDS: Record<string, string> = {
   openrouter: 'openrouter_api_key',
 }
 
+// Display names for providers (proper capitalization)
+const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+  gemini: 'Gemini',
+  openai: 'OpenAI',
+  openrouter: 'OpenRouter',
+}
+
 // Role icon mapping (only icons -- titles/descriptions come from t())
 const ROLE_ICONS: Record<RoleName, React.ReactNode> = {
   meta: <Zap className="h-5 w-5 text-amber-500" />,
@@ -375,7 +382,7 @@ export default function SettingsPage() {
               <div key={provider} className="flex items-center gap-4 flex-wrap sm:flex-nowrap">
                 {/* Provider label */}
                 <div className="w-28 shrink-0">
-                  <span className="font-medium capitalize text-sm">{provider}</span>
+                  <span className="font-medium text-sm">{PROVIDER_DISPLAY_NAMES[provider] ?? provider}</span>
                   {hasKey ? (
                     <Badge variant="secondary" className="ml-2 text-xs">{t('settings.active')}</Badge>
                   ) : (

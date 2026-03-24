@@ -19,8 +19,10 @@
     "runNumber": "Run #{{number}}"
   },
   "promptLayout": {
-    "vars": "{{count}} vars",
-    "anchors": "{{count}} anchors",
+    "vars_one": "{{count}} var",
+    "vars_other": "{{count}} vars",
+    "anchors_one": "{{count}} anchor",
+    "anchors_other": "{{count}} anchors",
     "missingId": "Missing prompt ID.",
     "notFound": "Prompt not found.",
     "template": "Template",
@@ -39,8 +41,10 @@
     "noPromptsDescription": "Register your first prompt to start evolving it.",
     "newPrompt": "New Prompt",
     "noMatch": "No prompts match your search.",
-    "vars": "{{count}} vars",
-    "anchors": "{{count}} anchors",
+    "vars_one": "{{count}} var",
+    "vars_other": "{{count}} vars",
+    "anchors_one": "{{count}} anchor",
+    "anchors_other": "{{count}} anchors",
     "failedToLoadPrompt": "Failed to load prompt.",
     "promptNotFound": "Prompt not found.",
     "templateVariables": "Template Variables",
@@ -357,8 +361,8 @@
     "provider": "Provider"
   },
   "datasets": {
-    "testCases": "{{count}} test case",
-    "testCases_plural": "{{count}} test cases",
+    "testCases_one": "{{count}} test case",
+    "testCases_other": "{{count}} test cases",
     "generateTests": "Generate Tests",
     "addCase": "Add Case",
     "noTestCasesYet": "No test cases yet",
