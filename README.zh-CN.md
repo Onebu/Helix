@@ -1,6 +1,10 @@
 > 🌐 [English](README.md) | [中文](README.zh-CN.md)
 
-# Helix
+<p align="center">
+  <img src="docs/logo.png" alt="Helix Logo" width="160" />
+</p>
+
+<h1 align="center">Helix</h1>
 
 一个通过自动化测试迭代优化 LLM 提示词的工具。Helix 针对测试用例数据集进化你的提示词文本，直到所有测试用例通过——同时不破坏已有的功能。
 

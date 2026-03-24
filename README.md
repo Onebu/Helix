@@ -1,6 +1,10 @@
 > 🌐 [English](README.md) | [中文](README.zh-CN.md)
 
-# Helix
+<p align="center">
+  <img src="docs/logo.png" alt="Helix Logo" width="160" />
+</p>
+
+<h1 align="center">Helix</h1>
 
 A tool for iteratively improving LLM prompts using automated testing. Helix evolves your prompt text against a dataset of test cases until it passes every case -- without breaking what already works.
 
