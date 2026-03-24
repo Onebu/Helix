@@ -309,55 +309,34 @@ export default function EvolutionDashboard({ runId }: EvolutionDashboardProps) {
 
   return (
     <div className="space-y-6">
-      {/* Status bar with model badges */}
-      <div className="flex items-center gap-4 text-sm flex-wrap">
+      {/* Header: status + accept action */}
+      <div className="flex items-center gap-3">
         <StatusBadge status={displayStatus} />
-        {(modelInfo.metaModel || modelInfo.targetModel || modelInfo.judgeModel) && (
-          <div className="flex flex-wrap gap-2 ml-auto">
-            {modelInfo.metaModel && (
-              <Badge variant="secondary" className="gap-1">
-                <span className="text-muted-foreground text-xs">Meta</span>
-                {modelInfo.metaProvider ? `${modelInfo.metaProvider}/` : ''}{modelInfo.metaModel}
-              </Badge>
-            )}
-            {modelInfo.targetModel && (
-              <Badge variant="secondary" className="gap-1">
-                <span className="text-muted-foreground text-xs">Target</span>
-                {modelInfo.targetProvider ? `${modelInfo.targetProvider}/` : ''}{modelInfo.targetModel}
-              </Badge>
-            )}
-            {modelInfo.judgeModel && (
-              <Badge variant="secondary" className="gap-1">
-                <span className="text-muted-foreground text-xs">Judge</span>
-                {modelInfo.judgeProvider ? `${modelInfo.judgeProvider}/` : ''}{modelInfo.judgeModel}
-              </Badge>
-            )}
-          </div>
-        )}
-        {/* Accept as new version button */}
-        {canAccept && (
-          <Button
-            size="sm"
-            className="bg-emerald-600 hover:bg-emerald-700 text-white ml-auto"
-            onClick={() => acceptMutation.mutate(results!.bestTemplate!)}
-            disabled={acceptMutation.isPending}
-          >
-            {acceptMutation.isPending ? 'Accepting...' : 'Accept as New Version'}
-          </Button>
-        )}
-        {acceptedVersion !== null && (
-          <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 ml-auto">
-            Accepted as v{acceptedVersion}
-          </Badge>
-        )}
-        {acceptError && (
-          <span className="text-red-400 text-xs ml-auto">{acceptError}</span>
-        )}
+        <div className="ml-auto flex items-center gap-3">
+          {acceptError && (
+            <span className="text-red-400 text-xs">{acceptError}</span>
+          )}
+          {acceptedVersion !== null && (
+            <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+              Accepted as v{acceptedVersion}
+            </Badge>
+          )}
+          {canAccept && (
+            <Button
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              onClick={() => acceptMutation.mutate(results!.bestTemplate!)}
+              disabled={acceptMutation.isPending}
+            >
+              {acceptMutation.isPending ? 'Accepting...' : 'Accept as New Version'}
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* Hyperparameters as organized category cards */}
-      {hyperparameters && (
-        <HyperparameterDisplay hyperparameters={hyperparameters} />
+      {/* Hyperparameters + model info in a compact collapsible section */}
+      {(hyperparameters || modelInfo.metaModel || modelInfo.targetModel || modelInfo.judgeModel) && (
+        <HyperparameterDisplay hyperparameters={hyperparameters ?? {}} modelInfo={modelInfo} />
       )}
 
       {/* Sub-navigation: segmented button group */}

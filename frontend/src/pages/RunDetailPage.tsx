@@ -11,10 +11,7 @@ export default function RunDetailPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-lg font-semibold text-foreground">
-        {t('history.runHash', { id: runId })}
-      </h1>
+    <div>
       <EvolutionDashboard runId={runId} />
     </div>
   )

@@ -87,8 +87,18 @@ export function isOverride(key: string, value: unknown): boolean {
   return defaultVal !== value
 }
 
+interface ModelInfo {
+  metaModel: string | null
+  metaProvider: string | null
+  targetModel: string | null
+  targetProvider: string | null
+  judgeModel: string | null
+  judgeProvider: string | null
+}
+
 interface HyperparameterDisplayProps {
   hyperparameters: Record<string, unknown>
+  modelInfo?: ModelInfo
 }
 
 /**
@@ -160,10 +170,22 @@ function ParamRow({ label, value, override, t }: { label: string; value: unknown
   )
 }
 
-export default function HyperparameterDisplay({ hyperparameters }: HyperparameterDisplayProps) {
+function ModelBadge({ role, provider, model }: { role: string; provider: string | null; model: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+      <span>{role}</span>
+      <span className="font-mono text-foreground text-xs">{provider ? `${provider}/` : ''}{model}</span>
+    </span>
+  )
+}
+
+export default function HyperparameterDisplay({ hyperparameters, modelInfo }: HyperparameterDisplayProps) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
   const flat = flattenHyperparameters(hyperparameters)
+
+  const hasModels = modelInfo && (modelInfo.metaModel || modelInfo.targetModel || modelInfo.judgeModel)
+  const hasParams = Object.keys(flat).length > 0
 
   // Split into key params (always visible) and advanced params
   const keyEntries = KEY_PARAMS
@@ -171,55 +193,81 @@ export default function HyperparameterDisplay({ hyperparameters }: Hyperparamete
     .map((k) => ({ key: k, label: formatLabel(k), value: flat[k], override: isOverride(k, flat[k]) }))
 
   return (
-    <div className="space-y-2">
-      {/* Compact summary: key params in a single row */}
-      <Card className="bg-card/50">
-        <CardContent className="px-4 py-3">
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
-            {keyEntries.map(({ key, label, value, override }) => (
-              <ParamRow key={key} label={label} value={value} override={override} t={t} />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+    <div className="space-y-1">
+      {/* Compact summary row: models + key params, all inline */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm px-1">
+        {hasModels && (
+          <>
+            {modelInfo.metaModel && (
+              <ModelBadge role="Meta" provider={modelInfo.metaProvider} model={modelInfo.metaModel} />
+            )}
+            {modelInfo.targetModel && (
+              <ModelBadge role="Target" provider={modelInfo.targetProvider} model={modelInfo.targetModel} />
+            )}
+            {modelInfo.judgeModel && (
+              <ModelBadge role="Judge" provider={modelInfo.judgeProvider} model={modelInfo.judgeModel} />
+            )}
+            {keyEntries.length > 0 && (
+              <span className="text-muted-foreground/30">|</span>
+            )}
+          </>
+        )}
+        {keyEntries.map(({ key, label, value, override }) => (
+          <span key={key} className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+            {label}
+            <span className={override ? 'font-mono text-amber-400' : 'font-mono text-foreground'}>
+              {String(value)}
+            </span>
+            {override && (
+              <Badge variant="outline" className="text-amber-400 border-amber-400/30 px-1 py-0 text-[10px] leading-tight">
+                {t('evolution.override')}
+              </Badge>
+            )}
+          </span>
+        ))}
+      </div>
 
       {/* Expandable full detail */}
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-1"
-      >
-        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? '' : '-rotate-90'}`} />
-        {expanded ? 'Hide parameters' : 'All parameters'}
-      </button>
+      {hasParams && (
+        <>
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-1"
+          >
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? '' : '-rotate-90'}`} />
+            {expanded ? 'Hide parameters' : 'All parameters'}
+          </button>
 
-      {expanded && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Object.entries(HYPER_GROUPS).map(([groupName, keys]) => {
-            const presentKeys = keys.filter((k) => k in flat && flat[k] !== null && flat[k] !== undefined)
-            if (presentKeys.length === 0) return null
+          {expanded && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
+              {Object.entries(HYPER_GROUPS).map(([groupName, keys]) => {
+                const presentKeys = keys.filter((k) => k in flat && flat[k] !== null && flat[k] !== undefined)
+                if (presentKeys.length === 0) return null
 
-            return (
-              <Card key={groupName} className="bg-card/50">
-                <CardContent className="p-4">
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                    {t(`evolution.${groupName}`)}
-                  </h4>
-                  <div className="space-y-2">
-                    {presentKeys.map((k) => (
-                      <ParamRow
-                        key={k}
-                        label={formatLabel(k)}
-                        value={flat[k]}
-                        override={isOverride(k, flat[k])}
-                        t={t}
-                      />
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
+                return (
+                  <Card key={groupName} className="bg-card/50">
+                    <CardContent className="p-4">
+                      <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+                        {t(`evolution.${groupName}`)}
+                      </h4>
+                      <div className="space-y-2">
+                        {presentKeys.map((k) => (
+                          <ParamRow
+                            key={k}
+                            label={formatLabel(k)}
+                            value={flat[k]}
+                            override={isOverride(k, flat[k])}
+                            t={t}
+                          />
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          )}
+        </>
       )}
     </div>
   )
