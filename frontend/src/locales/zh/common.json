@@ -281,6 +281,8 @@
     "toIsland": "岛屿 {{to}}",
     "noDiffData": "无差异数据",
     "noIslandData": "无岛屿数据",
+    "noIslandDataToDisplay": "无岛屿数据可显示",
+    "webglRequired": "3D可视化需要WebGL支持",
     "island": "岛屿 {{index}}",
     "moreOverflow": "+{{count}} 更多",
     "migrationInProgress": "迁移进行中",

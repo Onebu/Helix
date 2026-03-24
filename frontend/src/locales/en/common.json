@@ -304,6 +304,8 @@
     "toIsland": "Island {{to}}",
     "noDiffData": "No diff data available",
     "noIslandData": "No island data",
+    "noIslandDataToDisplay": "No island data to display",
+    "webglRequired": "3D visualization requires WebGL",
     "island": "Island {{index}}",
     "moreOverflow": "+{{count}} more",
     "migrationInProgress": "Migration in progress",

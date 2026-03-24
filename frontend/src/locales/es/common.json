@@ -281,6 +281,8 @@
     "toIsland": "Isla {{to}}",
     "noDiffData": "Sin datos de diferencias",
     "noIslandData": "Sin datos de islas",
+    "noIslandDataToDisplay": "No hay datos de islas para mostrar",
+    "webglRequired": "La visualización 3D requiere WebGL",
     "island": "Isla {{index}}",
     "moreOverflow": "+{{count}} más",
     "migrationInProgress": "Migración en progreso",

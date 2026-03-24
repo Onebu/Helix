@@ -1,4 +1,6 @@
-import { useRef, useState, useEffect, useMemo, useCallback } from 'react'
+import { useRef, useState, useEffect, useMemo, useCallback, Component } from 'react'
+import type { ReactNode, ErrorInfo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls, Html } from '@react-three/drei'
 import * as THREE from 'three'
@@ -15,6 +17,42 @@ function isWebGLAvailable(): boolean {
     return !!(canvas.getContext('webgl2') || canvas.getContext('webgl'))
   } catch {
     return false
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Error boundary for 3D render failures
+// ---------------------------------------------------------------------------
+interface CanvasErrorBoundaryState { hasError: boolean }
+
+function CanvasRenderErrorFallback() {
+  const { t } = useTranslation()
+  return (
+    <div className="flex items-center justify-center h-[500px] bg-slate-800 border border-slate-700 rounded-lg">
+      <p className="text-slate-400">{t('evolution.webglRequired')}</p>
+    </div>
+  )
+}
+
+class CanvasErrorBoundary extends Component<{ children: ReactNode }, CanvasErrorBoundaryState> {
+  constructor(props: { children: ReactNode }) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError(_: Error): CanvasErrorBoundaryState {
+    return { hasError: true }
+  }
+
+  componentDidCatch(_error: Error, _info: ErrorInfo) {
+    // Render failure is surfaced via the fallback UI
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <CanvasRenderErrorFallback />
+    }
+    return this.props.children
   }
 }
 
@@ -595,6 +633,7 @@ function Islands3DScene({
   islandCount,
   lineageEvents,
 }: Omit<Islands3DProps, 'seedFitness'>) {
+  const { t } = useTranslation()
   const containerRef = useRef<HTMLDivElement>(null)
   const islandLayouts = useMemo(() => computeIslandLayout(islandCount), [islandCount])
   const [containerDims, setContainerDims] = useState({ width: 800, height: 500 })
@@ -702,8 +741,15 @@ function Islands3DScene({
     }
   }, [candidateCountPerIsland]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const isEmpty = candidates.length === 0 && islandCount === 0
+
   return (
     <div ref={containerRef} className="bg-slate-800 border border-slate-700 rounded-lg p-4 h-[500px] relative">
+      {isEmpty && (
+        <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+          <p className="text-slate-400">{t('evolution.noIslandDataToDisplay')}</p>
+        </div>
+      )}
       <Canvas camera={{ position: [0, 0, 15], fov: 50 }}>
         {/* Three-point lighting: ambient fill + directional key + point fill + cool rim */}
         <ambientLight intensity={0.3} />
@@ -797,11 +843,13 @@ export default function Islands3D({
   }
 
   return (
-    <Islands3DScene
-      candidates={candidates}
-      migrations={migrations}
-      islandCount={islandCount}
-      lineageEvents={lineageEvents}
-    />
+    <CanvasErrorBoundary>
+      <Islands3DScene
+        candidates={candidates}
+        migrations={migrations}
+        islandCount={islandCount}
+        lineageEvents={lineageEvents}
+      />
+    </CanvasErrorBoundary>
   )
 }

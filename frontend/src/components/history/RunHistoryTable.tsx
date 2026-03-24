@@ -41,14 +41,31 @@ function StatusBadge({ status }: { status: string }) {
   }
 }
 
-function HistoryTableSkeleton() {
+function relativeTime(date: Date): string {
+  const now = Date.now()
+  const diffMs = now - date.getTime()
+  const diffSec = Math.floor(diffMs / 1000)
+  if (diffSec < 60) return `${diffSec}s ago`
+  const diffMin = Math.floor(diffSec / 60)
+  if (diffMin < 60) return `${diffMin}m ago`
+  const diffHr = Math.floor(diffMin / 60)
+  if (diffHr < 24) return `${diffHr}h ago`
+  const diffDay = Math.floor(diffHr / 24)
+  if (diffDay < 30) return `${diffDay} day${diffDay === 1 ? '' : 's'} ago`
+  const diffMonth = Math.floor(diffDay / 30)
+  if (diffMonth < 12) return `${diffMonth} month${diffMonth === 1 ? '' : 's'} ago`
+  const diffYear = Math.floor(diffMonth / 12)
+  return `${diffYear} year${diffYear === 1 ? '' : 's'} ago`
+}
+
+function HistoryTableSkeleton({ withPromptColumn }: { withPromptColumn: boolean }) {
   const { t } = useTranslation()
   return (
     <Table>
       <TableHeader>
         <TableRow>
           <TableHead>{t('history.id')}</TableHead>
-          <TableHead>{t('history.prompt')}</TableHead>
+          {withPromptColumn && <TableHead>{t('history.prompt')}</TableHead>}
           <TableHead>{t('history.date')}</TableHead>
           <TableHead>{t('history.status')}</TableHead>
           <TableHead>{t('history.bestFitness')}</TableHead>
@@ -61,7 +78,7 @@ function HistoryTableSkeleton() {
         {[1, 2, 3].map((i) => (
           <TableRow key={i}>
             <TableCell><Skeleton className="h-4 w-[80px]" /></TableCell>
-            <TableCell><Skeleton className="h-4 w-[100px]" /></TableCell>
+            {withPromptColumn && <TableCell><Skeleton className="h-4 w-[100px]" /></TableCell>}
             <TableCell><Skeleton className="h-4 w-[140px]" /></TableCell>
             <TableCell><Skeleton className="h-5 w-[70px] rounded-full" /></TableCell>
             <TableCell><Skeleton className="h-4 w-[60px]" /></TableCell>
@@ -176,7 +193,7 @@ export default function RunHistoryTable({ promptId: propPromptId }: RunHistoryTa
       )}
 
       {selectedPromptId && historyLoading && (
-        <HistoryTableSkeleton />
+        <HistoryTableSkeleton withPromptColumn={!propPromptId} />
       )}
 
       {selectedPromptId && !historyLoading && sortedRuns.length === 0 && (
@@ -197,7 +214,7 @@ export default function RunHistoryTable({ promptId: propPromptId }: RunHistoryTa
             <TableHeader>
               <TableRow>
                 <TableHead>{t('history.id')}</TableHead>
-                <TableHead>{t('history.prompt')}</TableHead>
+                {!propPromptId && <TableHead>{t('history.prompt')}</TableHead>}
                 <TableHead>{t('history.date')}</TableHead>
                 <TableHead>{t('history.status')}</TableHead>
                 <TableHead>{t('history.bestFitness')}</TableHead>
@@ -207,32 +224,36 @@ export default function RunHistoryTable({ promptId: propPromptId }: RunHistoryTa
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sortedRuns.map((run) => (
-                <TableRow
-                  key={run.id}
-                  onClick={() => navigate(propPromptId ? `${run.id}` : `/history/${run.id}`)}
-                  className="cursor-pointer"
-                >
-                  <TableCell className="font-mono text-xs">{run.id}</TableCell>
-                  <TableCell>{run.prompt_id}</TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {new Date(run.created_at).toLocaleString()}
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge status={run.status} />
-                  </TableCell>
-                  <TableCell className="font-mono">
-                    {run.best_fitness_score !== null ? run.best_fitness_score.toFixed(3) : '--'}
-                  </TableCell>
-                  <TableCell className="font-mono">
-                    ${run.total_cost_usd.toFixed(2)}
-                  </TableCell>
-                  <TableCell className="text-center">{run.generations_completed}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {run.meta_model} / {run.target_model}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {sortedRuns.map((run) => {
+                const createdDate = new Date(run.created_at)
+                return (
+                  <TableRow
+                    key={run.id}
+                    onClick={() => navigate(propPromptId ? `${run.id}` : `/history/${run.id}`)}
+                    className="cursor-pointer hover:bg-muted/50 transition-colors"
+                  >
+                    <TableCell className="font-mono text-xs">{run.id}</TableCell>
+                    {!propPromptId && <TableCell>{run.prompt_id}</TableCell>}
+                    <TableCell className="whitespace-nowrap">
+                      <span>{createdDate.toLocaleString()}</span>
+                      <span className="ml-2 text-xs text-muted-foreground">· {relativeTime(createdDate)}</span>
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={run.status} />
+                    </TableCell>
+                    <TableCell className="font-mono">
+                      {run.best_fitness_score !== null ? run.best_fitness_score.toFixed(3) : '--'}
+                    </TableCell>
+                    <TableCell className="font-mono">
+                      ${run.total_cost_usd.toFixed(2)}
+                    </TableCell>
+                    <TableCell className="text-center">{run.generations_completed}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {run.meta_model} / {run.target_model}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
         </div>

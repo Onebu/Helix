@@ -89,6 +89,7 @@ export default function SummaryCards({ data }: SummaryCardsProps) {
     <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
       {cards.map((card) => {
         const Icon = card.icon
+        const isLongValue = card.value.length > 14
         return (
           <Card key={card.label} className={`border-l-[3px] ${card.borderClass}`}>
             <CardContent className="pt-5 pb-5">
@@ -96,7 +97,7 @@ export default function SummaryCards({ data }: SummaryCardsProps) {
                 <Icon className="h-3.5 w-3.5" />
                 {card.label}
               </div>
-              <p className={`text-2xl font-bold mt-1 ${card.colorClass}`}>
+              <p className={`${isLongValue ? 'text-lg' : 'text-2xl'} font-bold mt-1 ${card.colorClass} break-words`}>
                 {card.value}
               </p>
             </CardContent>

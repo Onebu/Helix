@@ -312,9 +312,6 @@ export default function EvolutionDashboard({ runId }: EvolutionDashboardProps) {
       {/* Status bar with model badges */}
       <div className="flex items-center gap-4 text-sm flex-wrap">
         <StatusBadge status={displayStatus} />
-        <span className="text-muted-foreground">
-          Run: <span className="font-mono text-foreground">{runId}</span>
-        </span>
         {(modelInfo.metaModel || modelInfo.targetModel || modelInfo.judgeModel) && (
           <div className="flex flex-wrap gap-2 ml-auto">
             {modelInfo.metaModel && (
