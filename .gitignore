@@ -56,3 +56,7 @@ node_modules/
 # OS
 .DS_Store
 Thumbs.db
+
+# Impeccable skills (local dev tool)
+.agents/
+skills-lock.json
