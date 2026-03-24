@@ -31,7 +31,6 @@ def all_keys_config() -> GeneConfig:
         gemini_api_key="test-gemini-key",
         openrouter_api_key="test-openrouter-key",
         openai_api_key="test-openai-key",
-        _yaml_file="/dev/null",
     )
 
 
@@ -42,13 +41,6 @@ def all_keys_config() -> GeneConfig:
 
 class TestProviderIntegration:
     """Per-provider configuration and call verification tests."""
-
-    @pytest.fixture(autouse=True)
-    def clean_env(self, monkeypatch):
-        """Remove env vars that leak from other test modules."""
-        monkeypatch.delenv("GENE_GEMINI_API_KEY", raising=False)
-        monkeypatch.delenv("GENE_OPENROUTER_API_KEY", raising=False)
-        monkeypatch.delenv("GENE_DATABASE_URL", raising=False)
 
     # -- Test 1-3: create_provider returns correct LiteLLMProvider per provider --
 
@@ -104,7 +96,7 @@ class TestProviderIntegration:
 
     def test_missing_api_key_raises_config_error(self):
         """create_provider with missing API key raises ConfigError with env var hint."""
-        config_no_keys = GeneConfig(_yaml_file="/dev/null")
+        config_no_keys = GeneConfig()
         with pytest.raises(ConfigError, match="is required when using"):
             create_provider("gemini", config_no_keys)
 

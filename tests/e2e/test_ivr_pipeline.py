@@ -3,7 +3,7 @@
 ALL tests marked with @pytest.mark.e2e -- skipped by default.
 Run with: uv run pytest -m e2e -v
 
-API key resolved via GeneConfig cascade: gene.yaml < GENE_GEMINI_API_KEY env var.
+API key resolved via GENE_GEMINI_API_KEY env var.
 These tests cost real money. Budget caps and minimal configs keep costs low.
 """
 
@@ -21,7 +21,7 @@ pytestmark = [
     pytest.mark.e2e,
     pytest.mark.skipif(
         not _base_config.gemini_api_key,
-        reason="gemini_api_key not configured (gene.yaml or GENE_GEMINI_API_KEY)",
+        reason="gemini_api_key not configured (GENE_GEMINI_API_KEY env var)",
     ),
 ]
 
@@ -134,7 +134,6 @@ class TestE2EFullEvolutionRun:
             target_model="gemini-3-flash-preview",
             judge_model="gemini-3-flash-preview",
             generation=GenerationConfig(temperature=0),
-            _yaml_file="/dev/null",
         )
 
         # Load prompt record

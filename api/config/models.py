@@ -1,9 +1,7 @@
-"""Configuration models with three-layer cascade: gene.yaml < env vars < constructor args."""
-
-from pathlib import Path
+"""Configuration models with two-layer cascade: env vars < constructor args."""
 
 from pydantic import BaseModel
-from pydantic_settings import BaseSettings, SettingsConfigDict, YamlConfigSettingsSource
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class GenerationConfig(BaseModel):
@@ -20,17 +18,13 @@ class GenerationConfig(BaseModel):
 class GeneConfig(BaseSettings):
     """Main configuration for Helix.
 
-    Three-layer cascade priority:
+    Two-layer cascade priority:
     1. Constructor args / CLI flags (highest)
     2. Environment variables (GENE_ prefix)
-    3. gene.yaml file (lowest)
 
     Required for commands that use external services (evolve, history, status, bootstrap):
     openrouter_api_key and database_url. File-only commands (register, add-case, diff)
     work without these fields configured.
-
-    Pass _yaml_file="path/to/gene.yaml" to constructor to override
-    the default YAML file path (useful for testing).
     """
 
     model_config = SettingsConfigDict(
@@ -80,19 +74,8 @@ class GeneConfig(BaseSettings):
         dotenv_settings,
         file_secret_settings,
     ):
-        """Configure source priority: init (constructor) > env > yaml.
-
-        Accepts _yaml_file in init_kwargs to override the default gene.yaml path.
-        """
-        # Extract _yaml_file from init_kwargs (pop so it doesn't get validated as a field)
-        yaml_file = init_settings.init_kwargs.pop("_yaml_file", None)
-        yaml_path = yaml_file if yaml_file else "gene.yaml"
-
+        """Configure source priority: init (constructor) > env."""
         return (
             init_settings,
             env_settings,
-            YamlConfigSettingsSource(
-                settings_cls,
-                yaml_file=Path(yaml_path),
-            ),
         )

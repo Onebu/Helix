@@ -49,9 +49,6 @@ async def lifespan(app: FastAPI):
             await db.ensure_columns()
             logger.info("Database schema up to date")
 
-            # Seed settings from gene.yaml (idempotent -- skips if already seeded)
-            await db.seed_settings_from_yaml()
-
             # Check if DB has any prompts
             from sqlalchemy import select
             from sqlalchemy.sql import func

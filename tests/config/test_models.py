@@ -19,7 +19,7 @@ class TestMetaModelConfig:
         config = GeneConfig(
             openrouter_api_key="test-key",
             database_url="postgresql://test@localhost/test",
-            _yaml_file="/dev/null",
+
         )
         assert config.meta_model == "anthropic/claude-sonnet-4"
 
@@ -45,7 +45,7 @@ class TestTargetModelConfig:
         config = GeneConfig(
             openrouter_api_key="test-key",
             database_url="postgresql://test@localhost/test",
-            _yaml_file="/dev/null",
+
         )
         assert config.target_model == "openai/gpt-4o-mini"
 
@@ -71,7 +71,7 @@ class TestJudgeModelConfig:
         config = GeneConfig(
             openrouter_api_key="test-key",
             database_url="postgresql://test@localhost/test",
-            _yaml_file="/dev/null",
+
         )
         assert config.judge_model == "anthropic/claude-sonnet-4"
 
@@ -87,76 +87,18 @@ class TestJudgeModelConfig:
         assert config.judge_model == "openai/gpt-4o"
 
 
-class TestGeneConfigYaml:
-    """Test 4: GeneConfig loads from YAML file when present."""
-
-    def test_loads_from_yaml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        """Write a temp gene.yaml, verify values are loaded."""
-        yaml_content = """\
-meta_model: "google/gemini-2.5-pro"
-target_model: "anthropic/claude-haiku-3.5"
-concurrency_limit: 20
-"""
-        yaml_file = tmp_path / "gene.yaml"
-        yaml_file.write_text(yaml_content)
-
-        from api.config.models import GeneConfig
-
-        # Must provide required fields via constructor since they're not in YAML
-        config = GeneConfig(
-            openrouter_api_key="test-key",
-            database_url="postgresql://test@localhost/test",
-            _yaml_file=str(yaml_file),
-        )
-        assert config.meta_model == "google/gemini-2.5-pro"
-        assert config.target_model == "anthropic/claude-haiku-3.5"
-        assert config.concurrency_limit == 20
-
-
-class TestConfigCascade:
-    """Test 5: Constructor args override YAML values (three-layer cascade)."""
-
-    def test_constructor_overrides_yaml(self, tmp_path: Path):
-        """Three-layer cascade priority: init > env > yaml."""
-        yaml_content = """\
-meta_model: "yaml-model"
-target_model: "yaml-target"
-"""
-        yaml_file = tmp_path / "gene.yaml"
-        yaml_file.write_text(yaml_content)
-
-        from api.config.models import GeneConfig
-
-        config = GeneConfig(
-            openrouter_api_key="test-key",
-            database_url="postgresql://test@localhost/test",
-            meta_model="constructor-model",
-            _yaml_file=str(yaml_file),
-        )
-        # Constructor wins over YAML
-        assert config.meta_model == "constructor-model"
-        # YAML value loaded where no constructor override
-        assert config.target_model == "yaml-target"
-
-
 class TestEnvVarOverrides:
-    """Test 6: Environment variables with GENE_ prefix override YAML values."""
+    """Test 5: Environment variables with GENE_ prefix are picked up."""
 
-    def test_env_overrides_yaml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        """Set GENE_META_MODEL env var, verify it takes precedence over yaml."""
-        yaml_content = """\
-meta_model: "yaml-model"
-"""
-        yaml_file = tmp_path / "gene.yaml"
-        yaml_file.write_text(yaml_content)
-
+    def test_env_vars_loaded(self, monkeypatch: pytest.MonkeyPatch):
+        """GENE_META_MODEL env var is picked up by GeneConfig."""
         monkeypatch.setenv("GENE_META_MODEL", "env-model")
         monkeypatch.setenv("GENE_OPENROUTER_API_KEY", "env-key")
         monkeypatch.setenv("GENE_DATABASE_URL", "postgresql://env@localhost/test")
 
         from api.config.models import GeneConfig
 
-        config = GeneConfig(_yaml_file=str(yaml_file))
+        config = GeneConfig()
         assert config.meta_model == "env-model"
         assert config.openrouter_api_key == "env-key"
 
@@ -180,13 +122,6 @@ meta_model: "yaml-model"
 class TestOptionalSecrets:
     """Test 7: GeneConfig allows optional secrets (validated at command level)."""
 
-    @pytest.fixture(autouse=True)
-    def clean_env(self, monkeypatch):
-        """Remove env vars that leak from other test modules."""
-        monkeypatch.delenv("GENE_GEMINI_API_KEY", raising=False)
-        monkeypatch.delenv("GENE_OPENROUTER_API_KEY", raising=False)
-        monkeypatch.delenv("GENE_DATABASE_URL", raising=False)
-
     def test_openrouter_api_key_defaults_to_none(self):
         """openrouter_api_key defaults to None when not provided."""
         from api.config.models import GeneConfig
@@ -198,7 +133,7 @@ class TestOptionalSecrets:
         """database_url defaults to None when not provided."""
         from api.config.models import GeneConfig
 
-        config = GeneConfig(openrouter_api_key="test-key", _yaml_file="/dev/null")
+        config = GeneConfig(openrouter_api_key="test-key")
         assert config.database_url is None
 
 
@@ -240,7 +175,7 @@ class TestLoadPromptConfig:
             openrouter_api_key="test-key",
             database_url="postgresql://test@localhost/test",
             target_model="openai/gpt-4o-mini",
-            _yaml_file="/dev/null",
+
         )
 
         # Create per-prompt config.json
@@ -281,18 +216,11 @@ class TestLoadPromptConfig:
 class TestProviderFields:
     """GEM-01: GeneConfig has per-role provider fields."""
 
-    @pytest.fixture(autouse=True)
-    def clean_env(self, monkeypatch):
-        """Remove env vars that leak from other test modules."""
-        monkeypatch.delenv("GENE_GEMINI_API_KEY", raising=False)
-        monkeypatch.delenv("GENE_OPENROUTER_API_KEY", raising=False)
-        monkeypatch.delenv("GENE_DATABASE_URL", raising=False)
-
     def test_config_provider_fields_default_openrouter(self):
         """meta_provider, target_provider, judge_provider all default to 'openrouter'."""
         from api.config.models import GeneConfig
 
-        config = GeneConfig(_yaml_file="/dev/null")
+        config = GeneConfig()
         assert config.meta_provider == "openrouter"
         assert config.target_provider == "openrouter"
         assert config.judge_provider == "openrouter"
@@ -301,7 +229,7 @@ class TestProviderFields:
         """gemini_api_key defaults to None, no validation error."""
         from api.config.models import GeneConfig
 
-        config = GeneConfig(_yaml_file="/dev/null")
+        config = GeneConfig()
         assert config.gemini_api_key is None
 
     def test_config_provider_per_role(self):
@@ -309,30 +237,11 @@ class TestProviderFields:
         from api.config.models import GeneConfig
 
         config = GeneConfig(
-            meta_provider="gemini", gemini_api_key="test-gemini-key", _yaml_file="/dev/null"
+            meta_provider="gemini", gemini_api_key="test-gemini-key"
         )
         assert config.meta_provider == "gemini"
         assert config.target_provider == "openrouter"
         assert config.judge_provider == "openrouter"
-
-    def test_config_from_yaml_with_providers(self, tmp_path: Path):
-        """YAML with provider fields loads correctly."""
-        yaml_content = """\
-meta_provider: "gemini"
-target_provider: "openrouter"
-judge_provider: "gemini"
-gemini_api_key: "yaml-gemini-key"
-"""
-        yaml_file = tmp_path / "gene.yaml"
-        yaml_file.write_text(yaml_content)
-
-        from api.config.models import GeneConfig
-
-        config = GeneConfig(_yaml_file=str(yaml_file))
-        assert config.meta_provider == "gemini"
-        assert config.target_provider == "openrouter"
-        assert config.judge_provider == "gemini"
-        assert config.gemini_api_key == "yaml-gemini-key"
 
     def test_config_from_env_gemini_key(self, monkeypatch: pytest.MonkeyPatch):
         """GENE_GEMINI_API_KEY env var populates gemini_api_key."""
@@ -353,7 +262,7 @@ class TestConcurrencyLimit:
         config = GeneConfig(
             openrouter_api_key="test-key",
             database_url="postgresql://test@localhost/test",
-            _yaml_file="/dev/null",
+
         )
         assert config.concurrency_limit == 10
 

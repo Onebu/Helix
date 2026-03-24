@@ -289,7 +289,6 @@ class TestMockE2EProviderFactoryIntegration:
         """Verify create_provider returns LiteLLMProvider for all providers."""
         config_gemini = GeneConfig(
             gemini_api_key="test-gemini-key",
-            _yaml_file="/dev/null",
         )
         gemini_provider = create_provider("gemini", config_gemini)
         assert isinstance(gemini_provider, LiteLLMProvider)
@@ -298,7 +297,6 @@ class TestMockE2EProviderFactoryIntegration:
 
         config_or = GeneConfig(
             openrouter_api_key="test-or-key",
-            _yaml_file="/dev/null",
         )
         or_provider = create_provider("openrouter", config_or)
         assert isinstance(or_provider, LiteLLMProvider)

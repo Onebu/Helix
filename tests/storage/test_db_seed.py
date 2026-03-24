@@ -2,8 +2,6 @@
 
 Validates:
 - ensure_columns handles all tables (not just evolution_runs)
-- seed_settings_from_yaml reads gene.yaml and inserts Setting rows idempotently
-- seed_settings_from_yaml strips API key fields before inserting
 - import_prompt_sidecars reads config.json and inserts PromptConfig rows
 - import_prompt_sidecars reads personas.yaml and inserts Persona rows
 - Repeated calls to seed/import are no-ops (idempotent)
@@ -21,7 +19,6 @@ from api.storage.database import Database
 from api.storage.models import (
     Persona,
     PromptConfig,
-    Setting,
 )
 
 
@@ -33,30 +30,6 @@ async def db(tmp_path):
     await database.create_tables()
     yield database
     await database.close()
-
-
-@pytest.fixture
-def gene_yaml_path(tmp_path):
-    """Create a temporary gene.yaml with config and API keys."""
-    yaml_data = {
-        "meta_model": "gemini-2.5-pro",
-        "target_model": "gemini-2.5-flash",
-        "judge_model": "gemini-2.5-flash",
-        "meta_provider": "gemini",
-        "target_provider": "gemini",
-        "judge_provider": "gemini",
-        "concurrency_limit": 5,
-        "openrouter_api_key": "sk-or-v1-secret123",
-        "gemini_api_key": "AIza-secret456",
-        "openai_api_key": "sk-openai-secret789",
-        "generation": {
-            "temperature": 0.0,
-            "max_tokens": 1024,
-        },
-    }
-    yaml_path = tmp_path / "gene.yaml"
-    yaml_path.write_text(yaml.dump(yaml_data))
-    return str(yaml_path)
 
 
 @pytest.fixture
@@ -132,52 +105,6 @@ class TestEnsureColumnsAllTables:
 
         # ensure_columns should run without error on existing tables
         await db.ensure_columns()
-
-
-class TestSeedSettingsFromYaml:
-    """seed_settings_from_yaml reads gene.yaml and inserts Setting rows."""
-
-    async def test_seeds_global_config_and_generation_defaults(self, db, gene_yaml_path):
-        """Seeds Setting rows for 'global_config' and 'generation_defaults'."""
-        await db.seed_settings_from_yaml(gene_yaml_path)
-
-        async with db.session_factory() as session:
-            result = await session.execute(select(Setting))
-            settings = result.scalars().all()
-
-        categories = {s.category for s in settings}
-        assert "global_config" in categories
-        assert "generation_defaults" in categories
-
-    async def test_strips_api_key_fields(self, db, gene_yaml_path):
-        """API key fields are stripped from the data before inserting."""
-        await db.seed_settings_from_yaml(gene_yaml_path)
-
-        async with db.session_factory() as session:
-            result = await session.execute(select(Setting))
-            settings = result.scalars().all()
-
-        for setting in settings:
-            data = setting.data
-            for key in data:
-                assert "api_key" not in key.lower(), (
-                    f"API key field '{key}' found in {setting.category}"
-                )
-                assert "secret_key" not in key.lower(), (
-                    f"Secret key field '{key}' found in {setting.category}"
-                )
-
-    async def test_idempotent_no_duplicate_rows(self, db, gene_yaml_path):
-        """Calling seed twice does not create duplicate rows."""
-        await db.seed_settings_from_yaml(gene_yaml_path)
-        await db.seed_settings_from_yaml(gene_yaml_path)
-
-        async with db.session_factory() as session:
-            result = await session.execute(select(Setting))
-            settings = result.scalars().all()
-
-        # Should still be exactly 2 rows, not 4
-        assert len(settings) == 2
 
 
 class TestImportPromptSidecars:

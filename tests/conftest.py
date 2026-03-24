@@ -1,8 +1,26 @@
 """Shared test fixtures for Helix."""
 
+import os
 from pathlib import Path
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _clean_gene_env(monkeypatch):
+    """Remove GENE_* env vars to prevent .env pollution across tests.
+
+    load_dotenv() is called at module import time via api.web.app's
+    module-level ``app = create_app()``.  This leaks .env values into
+    every test that transitively imports from the web layer.
+
+    We also neutralize load_dotenv so that test fixtures calling
+    create_app() don't re-load .env values after cleanup.
+    """
+    monkeypatch.setattr("api.web.app.load_dotenv", lambda *a, **kw: None)
+    for key in list(os.environ):
+        if key.startswith("GENE_"):
+            monkeypatch.delenv(key)
 
 
 @pytest.fixture

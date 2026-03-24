@@ -62,7 +62,6 @@ def app(db_engine) -> FastAPI:
 
     test_config = GeneConfig(
         database_url=None,
-        _yaml_file="nonexistent.yaml",
     )
 
     # DB session factory using shared in-memory engine

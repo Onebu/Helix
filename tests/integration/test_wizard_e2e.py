@@ -115,7 +115,6 @@ async def _build_test_app() -> FastAPI:
 
     test_config = GeneConfig(
         database_url=None,
-        _yaml_file="nonexistent.yaml",
     )
 
     test_registry = PromptRegistry(session_factory)

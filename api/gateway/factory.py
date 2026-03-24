@@ -49,7 +49,7 @@ def create_provider(
         env_var = f"GENE_{cfg.api_key_field.upper()}"
         raise ConfigError(
             f"{cfg.api_key_field} is required when using the '{provider_name}' provider. "
-            f"Set via {env_var} env var or in gene.yaml"
+            f"Set via {env_var} env var or in the Settings UI"
         )
 
     return LiteLLMProvider(

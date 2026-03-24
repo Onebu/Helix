@@ -32,7 +32,6 @@ def _make_app_with_config(**config_kwargs) -> FastAPI:
     """Create a test FastAPI app with custom GeneConfig overrides."""
     application = create_app()
     test_config = GeneConfig(
-        _yaml_file="nonexistent.yaml",
         **config_kwargs,
     )
     application.dependency_overrides[get_config] = lambda: test_config
