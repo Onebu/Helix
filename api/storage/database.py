@@ -20,7 +20,6 @@ from api.storage.models import (
     Persona,
     Prompt,
     PromptConfig,
-    Setting,
     TestCaseRecord,
 )
 
@@ -131,59 +130,6 @@ class Database:
                 await conn.run_sync(_sync_ensure)
         except Exception:
             logger.warning("ensure_columns failed (table may not exist yet)", exc_info=True)
-
-    async def seed_settings_from_yaml(self, yaml_path: str = "gene.yaml") -> None:
-        """Seed the settings table from gene.yaml on first startup.
-
-        Creates two Setting rows:
-        - "global_config": provider/model/concurrency fields
-        - "generation_defaults": temperature/max_tokens/etc
-
-        API key fields are stripped for security. Idempotent -- skips
-        categories that already have rows.
-
-        Args:
-            yaml_path: Path to the gene.yaml file.
-        """
-        path = Path(yaml_path)
-        if not path.exists():
-            logger.info("No gene.yaml found at %s, skipping seed", yaml_path)
-            return
-
-        try:
-            raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except Exception:
-            logger.warning(
-                "Failed to parse gene.yaml at %s, skipping seed", yaml_path, exc_info=True
-            )
-            return
-
-        # Split into global_config and generation_defaults
-        generation_data = raw.pop("generation", {})
-        global_config_data = {k: v for k, v in raw.items() if not _is_sensitive_field(k)}
-        generation_defaults = {
-            k: v for k, v in generation_data.items() if not _is_sensitive_field(k)
-        }
-
-        categories = {
-            "global_config": global_config_data,
-            "generation_defaults": generation_defaults,
-        }
-
-        async with self.session_factory() as session:
-            for category, data in categories.items():
-                # Check if this category already exists
-                result = await session.execute(select(Setting).where(Setting.category == category))
-                existing = result.scalar_one_or_none()
-                if existing is not None:
-                    logger.debug("Setting category '%s' already exists, skipping", category)
-                    continue
-
-                setting = Setting(category=category, data=data)
-                session.add(setting)
-                logger.info("Seeded setting category: %s", category)
-
-            await session.commit()
 
     async def import_prompt_sidecars(self, prompts_dir: str) -> None:
         """Import config.json and personas.yaml sidecars into the database.

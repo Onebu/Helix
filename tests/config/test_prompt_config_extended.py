@@ -192,27 +192,27 @@ class TestGeneConfigTemperatureFields:
     """GeneConfig has per-role temperature fields."""
 
     def test_meta_temperature_defaults_to_none(self):
-        config = GeneConfig(_yaml_file="/dev/null")
+        config = GeneConfig()
         assert config.meta_temperature is None
 
     def test_target_temperature_defaults_to_none(self):
-        config = GeneConfig(_yaml_file="/dev/null")
+        config = GeneConfig()
         assert config.target_temperature is None
 
     def test_judge_temperature_defaults_to_none(self):
-        config = GeneConfig(_yaml_file="/dev/null")
+        config = GeneConfig()
         assert config.judge_temperature is None
 
     def test_meta_temperature_configurable(self):
-        config = GeneConfig(meta_temperature=0.9, _yaml_file="/dev/null")
+        config = GeneConfig(meta_temperature=0.9)
         assert config.meta_temperature == 0.9
 
     def test_target_temperature_configurable(self):
-        config = GeneConfig(target_temperature=0.0, _yaml_file="/dev/null")
+        config = GeneConfig(target_temperature=0.0)
         assert config.target_temperature == 0.0
 
     def test_judge_temperature_configurable(self):
-        config = GeneConfig(judge_temperature=0.3, _yaml_file="/dev/null")
+        config = GeneConfig(judge_temperature=0.3)
         assert config.judge_temperature == 0.3
 
 
@@ -230,7 +230,6 @@ class TestLoadPromptConfigExtended:
             meta_model="anthropic/claude-sonnet-4",
             target_model="openai/gpt-4o-mini",
             judge_model="anthropic/claude-sonnet-4",
-            _yaml_file="/dev/null",
         )
 
     def test_merges_provider_fields(self, tmp_path: Path):

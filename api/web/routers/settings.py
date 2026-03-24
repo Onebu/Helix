@@ -165,7 +165,7 @@ async def get_settings(
 @router.get("/defaults", response_model=SettingsResponse)
 async def get_defaults() -> SettingsResponse:
     """Return GeneConfig default values (for 'Reset to Defaults' feature)."""
-    defaults = GeneConfig(_yaml_file="nonexistent.yaml")
+    defaults = GeneConfig()
     return _build_settings_response(defaults)
 
 
@@ -248,7 +248,7 @@ async def update_settings(
     # Re-read from DB and merge onto fresh config for response
     db_data = await _load_db_settings(session)
     has_db_keys = any(k in db_data for k in _API_KEY_FIELDS)
-    fresh_config = GeneConfig(_yaml_file="nonexistent.yaml")
+    fresh_config = GeneConfig()
     merged = _merge_db_onto_config(fresh_config, db_data)
     # Re-apply env var keys from original config (env vars take priority)
     for field_name in _API_KEY_FIELDS:

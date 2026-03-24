@@ -54,7 +54,7 @@ docker compose -f docker-compose.dev.yml up      # Dev with hot reload
 
 **LLM gateway** — Single `AsyncOpenAI` client for all providers. `gateway/registry.py` maps provider names to `ProviderConfig` (base_url + api_key_field). Adding a provider = one dict entry in `PROVIDER_REGISTRY`.
 
-**Config cascade** — `config/models.py` `GeneConfig` uses pydantic-settings: constructor args > env vars (`GENE_*` prefix) > `gene.yaml` (legacy, optional).
+**Config cascade** — `config/models.py` `GeneConfig` uses pydantic-settings: constructor args > env vars (`GENE_*` prefix).
 
 **Storage** — SQLAlchemy 2.0 async ORM (`storage/models.py`). SQLite default, PostgreSQL optional. Schema auto-migrated via `ensure_columns()` on startup (no Alembic at runtime).
 

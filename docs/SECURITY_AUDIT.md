@@ -62,7 +62,7 @@ The following patterns were **added** to `.gitignore` during this audit:
 
 **Previously covered patterns** (already present, no changes needed):
 - `.env` -- environment secrets
-- `gene.yaml` -- YAML config (may contain keys)
+
 - `*.db` -- SQLite databases
 - `__pycache__/`, `*.py[cod]` -- Python bytecode
 - `.venv/`, `venv/`, `env/` -- virtual environments

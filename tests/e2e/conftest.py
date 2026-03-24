@@ -104,25 +104,24 @@ async def e2e_prompts_dir(e2e_session_factory, ivr_prompt_template, ivr_purpose,
 
 
 def _load_base_config() -> GeneConfig:
-    """Load GeneConfig using the normal cascade (gene.yaml + env vars).
+    """Load GeneConfig using env vars.
 
     Used to detect available API keys for skip logic and fixtures.
     """
     try:
         return GeneConfig()
     except Exception:
-        return GeneConfig(_yaml_file="/dev/null")
+        return GeneConfig()
 
 
 @pytest.fixture
 def e2e_config(e2e_prompts_dir):
     """Create a GeneConfig for E2E tests.
 
-    Inherits API keys from the normal config cascade (gene.yaml + env vars).
+    Inherits API keys from env vars.
     """
     base = _load_base_config()
     return GeneConfig(
         openrouter_api_key=base.openrouter_api_key,
         gemini_api_key=base.gemini_api_key,
-        _yaml_file="/dev/null",
     )

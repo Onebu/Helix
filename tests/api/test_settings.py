@@ -48,7 +48,7 @@ async def settings_session_factory(settings_engine):
 
 @pytest.fixture
 async def seed_settings(settings_session_factory):
-    """Seed Setting rows that mimic gene.yaml values (API keys stripped)."""
+    """Seed Setting rows with test config values (API keys stripped)."""
     async with settings_session_factory() as session:
         session.add(
             Setting(
@@ -79,7 +79,6 @@ def settings_app(settings_session_factory, seed_settings) -> FastAPI:
     application = create_app()
 
     test_config = GeneConfig(
-        _yaml_file="nonexistent.yaml",
         meta_provider="gemini",
         meta_model="gemini-2.5-pro",
         target_provider="openrouter",
@@ -212,7 +211,7 @@ async def test_put_settings_writes_to_db(
     settings_client: httpx.AsyncClient,
     settings_session_factory,
 ):
-    """PUT /api/settings persists changes to Setting table (not gene.yaml)."""
+    """PUT /api/settings persists changes to Setting table."""
     await settings_client.put(
         "/api/settings/",
         json={
@@ -300,7 +299,6 @@ async def test_put_settings_invalidates_cache(settings_client: httpx.AsyncClient
     """PUT /api/settings calls get_config.cache_clear()."""
     with patch("api.web.routers.settings.get_config") as mock_get_config:
         mock_config = GeneConfig(
-            _yaml_file="nonexistent.yaml",
             meta_provider="gemini",
             meta_model="gemini-2.5-pro",
         )

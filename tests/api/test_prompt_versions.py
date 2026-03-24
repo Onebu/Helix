@@ -373,7 +373,6 @@ class TestRunResultsPromptId:
         application = create_app()
         test_config = GeneConfig(
             database_url="sqlite+aiosqlite://",
-            _yaml_file="nonexistent.yaml",
         )
         application.dependency_overrides[get_config] = lambda: test_config
         application.dependency_overrides[get_database] = lambda: db

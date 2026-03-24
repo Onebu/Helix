@@ -22,7 +22,7 @@ frontend/
 .env
 .env.*
 !.env.example
-gene.yaml
+
 *.pem
 *.key
 

@@ -36,7 +36,6 @@ def db_app(db: Database) -> FastAPI:
 
     test_config = GeneConfig(
         database_url="sqlite+aiosqlite://",
-        _yaml_file="nonexistent.yaml",
     )
 
     application.dependency_overrides[get_config] = lambda: test_config
