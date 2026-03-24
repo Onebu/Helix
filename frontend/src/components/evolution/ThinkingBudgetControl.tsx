@@ -61,30 +61,27 @@ export default function ThinkingBudgetControl({
     const currentValue = thinkingBudget === null ? '__default__' : String(thinkingBudget)
 
     return (
-      <div className="ml-[140px] pl-2 -mt-1">
-        <label className="block text-xs text-muted-foreground mb-0.5">{t('evolution.thinkingBudget')}</label>
-        <Select
-          value={currentValue}
-          onValueChange={(v) => {
-            if (v === '__default__') {
-              onBudgetChange(null)
-            } else {
-              onBudgetChange(parseInt(v, 10))
-            }
-          }}
-        >
-          <SelectTrigger className="h-7 text-xs w-[200px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {BUDGET_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      <Select
+        value={currentValue}
+        onValueChange={(v) => {
+          if (v === '__default__') {
+            onBudgetChange(null)
+          } else {
+            onBudgetChange(parseInt(v, 10))
+          }
+        }}
+      >
+        <SelectTrigger className="h-8 text-xs w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {BUDGET_OPTIONS.map((opt) => (
+            <SelectItem key={opt.value} value={opt.value}>
+              {opt.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     )
   }
 
@@ -92,29 +89,26 @@ export default function ThinkingBudgetControl({
   const currentValue = thinkingLevel ?? '__default__'
 
   return (
-    <div className="ml-[140px] pl-2 -mt-1">
-      <label className="block text-xs text-muted-foreground mb-0.5">{t('evolution.thinkingLevel')}</label>
-      <Select
-        value={currentValue}
-        onValueChange={(v) => {
-          if (v === '__default__') {
-            onLevelChange(null)
-          } else {
-            onLevelChange(v)
-          }
-        }}
-      >
-        <SelectTrigger className="h-7 text-xs w-[200px]">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {LEVEL_OPTIONS.map((opt) => (
-            <SelectItem key={opt.value} value={opt.value}>
-              {opt.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
+    <Select
+      value={currentValue}
+      onValueChange={(v) => {
+        if (v === '__default__') {
+          onLevelChange(null)
+        } else {
+          onLevelChange(v)
+        }
+      }}
+    >
+      <SelectTrigger className="h-8 text-xs w-full">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {LEVEL_OPTIONS.map((opt) => (
+          <SelectItem key={opt.value} value={opt.value}>
+            {opt.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }

@@ -213,7 +213,7 @@ describe('ThinkingBudgetControl', () => {
       />
     )
 
-    expect(screen.getByText('Thinking Budget')).toBeInTheDocument()
+    expect(screen.getByText('Server default')).toBeInTheDocument()
   })
 
   it('renders level dropdown when provider is "gemini" and model contains "3.0"', () => {
@@ -228,7 +228,7 @@ describe('ThinkingBudgetControl', () => {
       />
     )
 
-    expect(screen.getByText('Thinking Level')).toBeInTheDocument()
+    expect(screen.getByText('Server default')).toBeInTheDocument()
   })
 
   it('renders nothing when provider is null or "openrouter"', () => {
@@ -283,7 +283,7 @@ describe('ThinkingBudgetControl', () => {
       />
     )
 
-    expect(screen.getByText('Thinking Budget')).toBeInTheDocument()
+    expect(screen.getByText('Server default')).toBeInTheDocument()
   })
 
   it('renders budget dropdown for alias model "gemini-pro-latest"', () => {
@@ -298,7 +298,7 @@ describe('ThinkingBudgetControl', () => {
       />
     )
 
-    expect(screen.getByText('Thinking Budget')).toBeInTheDocument()
+    expect(screen.getByText('Server default')).toBeInTheDocument()
   })
 
   it('budget dropdown includes "Dynamic (auto)" option for 2.5 models', () => {
