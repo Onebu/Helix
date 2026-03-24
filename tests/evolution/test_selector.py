@@ -68,14 +68,20 @@ class TestBoltzmannSelectorEdgeCases:
         assert all(c.id == "only" for c in result)
 
     def test_rejected_candidates_included_in_selection(self, selector):
-        """Rejected candidates participate in selection (no filtering)."""
+        """Rejected candidates participate in selection (no filtering).
+
+        Uses a smaller score gap (-1.0 vs -2.0) and more samples (500) to
+        make the test deterministic — with the old gap (-1.0 vs -5.0) and
+        only 100 samples, the penalized candidate had ~1.8% per-draw
+        probability, causing intermittent failures.
+        """
         candidates = [
             Candidate(id="good", template="good", fitness_score=-1.0),
-            Candidate(id="penalized", template="penalized", fitness_score=-5.0, rejected=True),
+            Candidate(id="penalized", template="penalized", fitness_score=-2.0, rejected=True),
         ]
-        result = selector.select(candidates=candidates, n_parents=100, temperature=1.0)
-        assert len(result) == 100
-        # Both candidates should appear at least once in 100 selections
+        result = selector.select(candidates=candidates, n_parents=500, temperature=1.0)
+        assert len(result) == 500
+        # Both candidates should appear at least once in 500 selections
         selected_ids = {c.id for c in result}
         assert "good" in selected_ids
         assert "penalized" in selected_ids
