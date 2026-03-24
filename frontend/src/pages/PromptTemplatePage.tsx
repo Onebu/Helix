@@ -29,20 +29,14 @@ export default function PromptTemplatePage() {
   return (
     <div>
       {!editing ? (
-        <div className="space-y-4">
-          <div className="flex justify-end">
-            <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
-              {t('prompts.editTemplate')}
-            </Button>
-          </div>
-          <PromptDetail promptId={promptId} />
+        <div className="space-y-6">
+          <PromptDetail
+            promptId={promptId}
+            onEditTemplate={() => setEditing(true)}
+          />
 
-          {/* Version History */}
-          <hr className="border-slate-700" />
-          <div className="space-y-3">
-            <h3 className="text-lg font-semibold text-foreground">{t('prompts.versionHistory')}</h3>
-            <VersionHistory promptId={promptId} />
-          </div>
+          {/* Section 5: Version History */}
+          <VersionHistorySection promptId={promptId} />
         </div>
       ) : (
         <div className="space-y-4">
@@ -59,6 +53,16 @@ export default function PromptTemplatePage() {
           />
         </div>
       )}
+    </div>
+  )
+}
+
+function VersionHistorySection({ promptId }: { promptId: string }) {
+  const { t } = useTranslation()
+  return (
+    <div className="space-y-3">
+      <h3 className="text-lg font-semibold text-foreground">{t('prompts.versionHistory')}</h3>
+      <VersionHistory promptId={promptId} />
     </div>
   )
 }

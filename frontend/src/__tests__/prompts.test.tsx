@@ -17,12 +17,18 @@ vi.mock('@monaco-editor/react', () => ({
 vi.mock('../client/sdk.gen', () => ({
   listPromptsApiPromptsGet: vi.fn(),
   getPromptApiPromptsPromptIdGet: vi.fn(),
+  listCasesApiPromptsPromptIdDatasetGet: vi.fn(),
 }))
 
-import { listPromptsApiPromptsGet, getPromptApiPromptsPromptIdGet } from '../client/sdk.gen'
+import {
+  listPromptsApiPromptsGet,
+  getPromptApiPromptsPromptIdGet,
+  listCasesApiPromptsPromptIdDatasetGet,
+} from '../client/sdk.gen'
 
 const mockListPrompts = vi.mocked(listPromptsApiPromptsGet)
 const mockGetPrompt = vi.mocked(getPromptApiPromptsPromptIdGet)
+const mockListCases = vi.mocked(listCasesApiPromptsPromptIdDatasetGet)
 
 function renderWithProviders(ui: React.ReactElement) {
   const queryClient = new QueryClient({
@@ -121,9 +127,11 @@ describe('PromptList', () => {
 describe('PromptDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Default: no test cases
+    mockListCases.mockResolvedValue({ data: [] } as never)
   })
 
-  it('renders prompt metadata with badges', async () => {
+  it('renders template preview and variable schema', async () => {
     mockGetPrompt.mockResolvedValue({
       data: {
         id: 'ivr-automotor',
@@ -132,16 +140,112 @@ describe('PromptDetail', () => {
         anchor_variables: ['greeting'],
         template: 'Hello {{ customer_name }}',
         tools: null,
+        variable_definitions: [
+          { name: 'customer_name', var_type: 'string', is_anchor: false },
+          { name: 'greeting', var_type: 'string', is_anchor: true },
+        ],
       },
     } as never)
 
     renderWithProviders(<PromptDetail promptId="ivr-automotor" />)
 
     await waitFor(() => {
-      expect(screen.getByText('ivr-automotor')).toBeInTheDocument()
-      expect(screen.getByText('IVR call handling')).toBeInTheDocument()
+      // Template preview shows the template text (variable highlighted in its own span)
+      expect(screen.getByText('Hello')).toBeInTheDocument()
+      expect(screen.getByText('{{ customer_name }}')).toBeInTheDocument()
+      // Variables & Schema section shows variable names
       expect(screen.getByText('customer_name')).toBeInTheDocument()
       expect(screen.getByText('greeting')).toBeInTheDocument()
+      // Anchor badge shown for greeting
+      expect(screen.getByText('anchor')).toBeInTheDocument()
+    })
+  })
+
+  it('renders tools section with formatted tool cards', async () => {
+    mockGetPrompt.mockResolvedValue({
+      data: {
+        id: 'tool-prompt',
+        purpose: 'Tool test',
+        template_variables: [],
+        anchor_variables: [],
+        template: 'Use tools',
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'lookup_customer',
+              description: 'Look up a customer by ID',
+              parameters: {
+                type: 'object',
+                properties: {
+                  customer_id: { type: 'string', description: 'The customer ID' },
+                },
+                required: ['customer_id'],
+              },
+            },
+          },
+        ],
+        variable_definitions: [],
+      },
+    } as never)
+
+    renderWithProviders(<PromptDetail promptId="tool-prompt" />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Tools (1)')).toBeInTheDocument()
+      expect(screen.getByText('lookup_customer')).toBeInTheDocument()
+      expect(screen.getByText('Look up a customer by ID')).toBeInTheDocument()
+      expect(screen.getByText('customer_id')).toBeInTheDocument()
+      expect(screen.getByText('required')).toBeInTheDocument()
+    })
+  })
+
+  it('shows no-tools message when tools is empty', async () => {
+    mockGetPrompt.mockResolvedValue({
+      data: {
+        id: 'no-tools',
+        purpose: 'No tools',
+        template_variables: [],
+        anchor_variables: [],
+        template: 'No tools here',
+        tools: [],
+        variable_definitions: [],
+      },
+    } as never)
+
+    renderWithProviders(<PromptDetail promptId="no-tools" />)
+
+    await waitFor(() => {
+      expect(screen.getByText('No tools defined for this prompt.')).toBeInTheDocument()
+    })
+  })
+
+  it('shows test case summary when cases exist', async () => {
+    mockGetPrompt.mockResolvedValue({
+      data: {
+        id: 'with-cases',
+        purpose: 'Test',
+        template_variables: [],
+        anchor_variables: [],
+        template: 'Test',
+        tools: null,
+        variable_definitions: [],
+      },
+    } as never)
+    mockListCases.mockResolvedValue({
+      data: [
+        { id: '1', tier: 'critical', name: 'c1' },
+        { id: '2', tier: 'normal', name: 'c2' },
+        { id: '3', tier: 'normal', name: 'c3' },
+        { id: '4', tier: 'low', name: 'c4' },
+      ],
+    } as never)
+
+    renderWithProviders(<PromptDetail promptId="with-cases" />)
+
+    await waitFor(() => {
+      expect(screen.getByText('4 test cases')).toBeInTheDocument()
+      expect(screen.getByText('1 critical, 2 normal, 1 low')).toBeInTheDocument()
     })
   })
 
