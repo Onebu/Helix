@@ -31,15 +31,29 @@ function ScorerFlags({ expectedOutput }: { expectedOutput: Record<string, unknow
   const flags: React.ReactNode[] = []
   if (expectedOutput.require_content === true) {
     flags.push(
-      <Badge key="rc" variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+      <Badge key="rc" variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20" title="Require Content — response must not be empty">
         RC
       </Badge>
     )
   }
   if (expectedOutput.match_args != null) {
     flags.push(
-      <Badge key="ma" variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/20">
+      <Badge key="ma" variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/20" title="Match Args — response must call the expected tool">
         MA
+      </Badge>
+    )
+  }
+  if (expectedOutput.must_contain != null) {
+    flags.push(
+      <Badge key="mc" variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/20" title="Must Contain — response must include specific text">
+        MC
+      </Badge>
+    )
+  }
+  if (expectedOutput.behavior_criteria != null) {
+    flags.push(
+      <Badge key="bj" variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-500/20" title="Behavior Judge — LLM evaluates against criteria">
+        BJ
       </Badge>
     )
   }
@@ -188,7 +202,15 @@ export function CaseList({ promptId }: { promptId: string }) {
                   <TableCell>
                     <ScorerFlags expectedOutput={tc.expected_output} />
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{tc.tags?.join(', ') || ''}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {tc.tags?.map((tag) => (
+                        <Badge key={tag} variant="secondary" className="text-xs font-normal">
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
+                  </TableCell>
                   <TableCell className="text-right">
                     <div className="flex gap-2 justify-end">
                       <Button
