@@ -77,7 +77,7 @@ export function PromptLayout() {
       {/* Tab navigation */}
       <Tabs
         value={activeTab}
-        onValueChange={(value) => navigate(value)}
+        onValueChange={(value) => navigate(`/prompts/${promptId}/${value}`)}
       >
         <TabsList>
           {TAB_VALUES.map((tabValue) => (

@@ -309,62 +309,44 @@ export default function EvolutionDashboard({ runId }: EvolutionDashboardProps) {
 
   return (
     <div className="space-y-6">
-      {/* Status bar with model badges */}
-      <div className="flex items-center gap-4 text-sm flex-wrap">
-        <StatusBadge status={displayStatus} />
-        {(modelInfo.metaModel || modelInfo.targetModel || modelInfo.judgeModel) && (
-          <div className="flex flex-wrap gap-2 ml-auto">
-            {modelInfo.metaModel && (
-              <Badge variant="secondary" className="gap-1">
-                <span className="text-muted-foreground text-xs">Meta</span>
-                {modelInfo.metaProvider ? `${modelInfo.metaProvider}/` : ''}{modelInfo.metaModel}
+      {/* Compact header bar: status + models/params + accept */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-3 flex-wrap">
+          <StatusBadge status={displayStatus} />
+          {(hyperparameters || modelInfo.metaModel) && (
+            <div className="flex-1 min-w-0">
+              <HyperparameterDisplay hyperparameters={hyperparameters ?? {}} modelInfo={modelInfo} />
+            </div>
+          )}
+          <div className="flex items-center gap-2 shrink-0">
+            {acceptError && (
+              <span className="text-red-400 text-xs">{acceptError}</span>
+            )}
+            {acceptedVersion !== null && (
+              <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs">
+                v{acceptedVersion} accepted
               </Badge>
             )}
-            {modelInfo.targetModel && (
-              <Badge variant="secondary" className="gap-1">
-                <span className="text-muted-foreground text-xs">Target</span>
-                {modelInfo.targetProvider ? `${modelInfo.targetProvider}/` : ''}{modelInfo.targetModel}
-              </Badge>
-            )}
-            {modelInfo.judgeModel && (
-              <Badge variant="secondary" className="gap-1">
-                <span className="text-muted-foreground text-xs">Judge</span>
-                {modelInfo.judgeProvider ? `${modelInfo.judgeProvider}/` : ''}{modelInfo.judgeModel}
-              </Badge>
+            {canAccept && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-emerald-600 text-emerald-400 hover:bg-emerald-600 hover:text-white text-xs"
+                onClick={() => acceptMutation.mutate(results!.bestTemplate!)}
+                disabled={acceptMutation.isPending}
+              >
+                {acceptMutation.isPending ? 'Accepting...' : 'Accept as New Version'}
+              </Button>
             )}
           </div>
-        )}
-        {/* Accept as new version button */}
-        {canAccept && (
-          <Button
-            size="sm"
-            className="bg-emerald-600 hover:bg-emerald-700 text-white ml-auto"
-            onClick={() => acceptMutation.mutate(results!.bestTemplate!)}
-            disabled={acceptMutation.isPending}
-          >
-            {acceptMutation.isPending ? 'Accepting...' : 'Accept as New Version'}
-          </Button>
-        )}
-        {acceptedVersion !== null && (
-          <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 ml-auto">
-            Accepted as v{acceptedVersion}
-          </Badge>
-        )}
-        {acceptError && (
-          <span className="text-red-400 text-xs ml-auto">{acceptError}</span>
-        )}
+        </div>
       </div>
-
-      {/* Hyperparameters as organized category cards */}
-      {hyperparameters && (
-        <HyperparameterDisplay hyperparameters={hyperparameters} />
-      )}
 
       {/* Sub-navigation: segmented button group */}
       {isComplete ? (
         <div>
           <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 pb-4">
-            <div className="inline-flex rounded-lg border bg-muted p-1 gap-1">
+            <div className="flex items-center gap-1 border-b border-border">
               {[
                 { value: 'overview', label: 'Overview' },
                 { value: 'lineage', label: 'Lineage' },
@@ -377,10 +359,10 @@ export default function EvolutionDashboard({ runId }: EvolutionDashboardProps) {
                   key={tab.value}
                   onClick={() => setActiveTab(tab.value)}
                   className={cn(
-                    'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                    'px-3 py-2 text-xs font-medium transition-colors border-b-2 -mb-px',
                     activeTab === tab.value
-                      ? 'bg-background text-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground'
+                      ? 'border-primary text-foreground'
+                      : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30'
                   )}
                 >
                   {tab.label}
