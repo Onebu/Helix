@@ -427,6 +427,7 @@ async def accept_version(
     """Accept an evolved template as a new version.
 
     Creates a new version from the provided template and sets it as active.
+    Idempotent: returns the existing version if the template already matches.
     Used after evolution runs to accept the best evolved template.
     """
     result = await registry.create_version(prompt_id, body.template)
@@ -435,4 +436,5 @@ async def accept_version(
         template=result["template"],
         created_at=result["created_at"],
         is_active=True,
+        already_existed=result.get("already_existed", False),
     )
