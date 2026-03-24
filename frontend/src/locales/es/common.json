@@ -19,8 +19,10 @@
     "runNumber": "Ejecución #{{number}}"
   },
   "promptLayout": {
-    "vars": "{{count}} vars",
-    "anchors": "{{count}} anclas",
+    "vars_one": "{{count}} var",
+    "vars_other": "{{count}} vars",
+    "anchors_one": "{{count}} ancla",
+    "anchors_other": "{{count}} anclas",
     "missingId": "Falta el ID del prompt.",
     "notFound": "Prompt no encontrado.",
     "template": "Plantilla",
@@ -39,8 +41,10 @@
     "noPromptsDescription": "Registra tu primer prompt para comenzar a evolucionarlo.",
     "newPrompt": "Nuevo Prompt",
     "noMatch": "Ningún prompt coincide con tu búsqueda.",
-    "vars": "{{count}} vars",
-    "anchors": "{{count}} anclas",
+    "vars_one": "{{count}} var",
+    "vars_other": "{{count}} vars",
+    "anchors_one": "{{count}} ancla",
+    "anchors_other": "{{count}} anclas",
     "failedToLoadPrompt": "Error al cargar el prompt.",
     "promptNotFound": "Prompt no encontrado.",
     "templateVariables": "Variables de plantilla",
@@ -541,6 +545,7 @@
   },
   "playground": {
     "missingPromptId": "Falta el ID del prompt.",
+    "model": "{{provider}} / {{model}}",
     "turnLimit": "Límite de turnos",
     "budget": "Presupuesto ($)",
     "saveAsTestCase": "Guardar como caso de prueba",

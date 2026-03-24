@@ -19,8 +19,10 @@
     "runNumber": "运行 #{{number}}"
   },
   "promptLayout": {
-    "vars": "{{count}} 个变量",
-    "anchors": "{{count}} 个锚点",
+    "vars_one": "{{count}} 个变量",
+    "vars_other": "{{count}} 个变量",
+    "anchors_one": "{{count}} 个锚点",
+    "anchors_other": "{{count}} 个锚点",
     "missingId": "缺少提示词 ID。",
     "notFound": "未找到提示词。",
     "template": "模板",
@@ -39,8 +41,10 @@
     "noPromptsDescription": "注册你的第一个提示词，开始进化之旅。",
     "newPrompt": "新建提示词",
     "noMatch": "没有匹配的提示词。",
-    "vars": "{{count}} 个变量",
-    "anchors": "{{count}} 个锚点",
+    "vars_one": "{{count}} 个变量",
+    "vars_other": "{{count}} 个变量",
+    "anchors_one": "{{count}} 个锚点",
+    "anchors_other": "{{count}} 个锚点",
     "failedToLoadPrompt": "加载提示词失败。",
     "promptNotFound": "未找到提示词。",
     "templateVariables": "模板变量",
@@ -541,6 +545,7 @@
   },
   "playground": {
     "missingPromptId": "缺少提示词 ID。",
+    "model": "{{provider}} / {{model}}",
     "turnLimit": "对话轮数限制",
     "budget": "预算（$）",
     "saveAsTestCase": "保存为测试用例",

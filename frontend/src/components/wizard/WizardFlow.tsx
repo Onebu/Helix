@@ -103,14 +103,17 @@ export function WizardFlow() {
       {/* Navigation buttons (not on Review step - it has its own buttons) */}
       {step < 3 && (
         <div className="flex justify-between mt-6">
-          <Button
-            variant="outline"
-            onClick={handleBack}
-            disabled={step === 0}
-          >
-            <ChevronLeft className="h-4 w-4 mr-1" />
-            {t('common.back')}
-          </Button>
+          {step > 0 ? (
+            <Button
+              variant="outline"
+              onClick={handleBack}
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              {t('common.back')}
+            </Button>
+          ) : (
+            <div />
+          )}
           <Button
             onClick={handleNext}
             disabled={!isStepValid(step, data)}

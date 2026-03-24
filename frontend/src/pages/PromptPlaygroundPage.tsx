@@ -6,6 +6,7 @@ import { getPromptApiPromptsPromptIdGet, addCaseApiPromptsPromptIdDatasetPost } 
 import type { PromptDetail } from '@/client/types.gen'
 import { useChatStream } from '@/hooks/useChatStream'
 import type { ChatMessage } from '@/hooks/useChatStream'
+import { getApiBaseUrl } from '@/lib/api-config'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -70,6 +71,17 @@ export default function PromptPlaygroundPage() {
   })
 
   const detail = prompt?.data as PromptDetail | undefined
+
+  const { data: promptConfig } = useQuery({
+    queryKey: ['prompt-config', promptId],
+    queryFn: async () => {
+      const base = getApiBaseUrl()
+      const res = await fetch(`${base}/api/prompts/${encodeURIComponent(promptId!)}/config`)
+      if (!res.ok) return null
+      return res.json() as Promise<{ target: { provider: string; model: string } }>
+    },
+    enabled: !!promptId,
+  })
 
   const chat = useChatStream(promptId ?? '')
 
@@ -246,6 +258,15 @@ export default function PromptPlaygroundPage() {
       <div className="flex-shrink-0 space-y-3 mb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
+            {/* Model indicator */}
+            {promptConfig?.target && (
+              <Badge variant="secondary" className="text-xs font-mono">
+                {t('playground.model', {
+                  provider: promptConfig.target.provider,
+                  model: promptConfig.target.model,
+                })}
+              </Badge>
+            )}
             {/* Turn limit */}
             <div className="flex items-center gap-1.5">
               <label className="text-xs text-muted-foreground whitespace-nowrap">{t('playground.turnLimit')}</label>
