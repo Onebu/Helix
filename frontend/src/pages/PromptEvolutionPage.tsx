@@ -1,8 +1,17 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import RunConfigForm from '@/components/evolution/RunConfigForm'
-import EvolutionDashboard from '@/components/evolution/EvolutionDashboard'
+
+const EvolutionDashboard = lazy(() => import('@/components/evolution/EvolutionDashboard'))
+
+function DashboardFallback() {
+  return (
+    <div className="flex items-center justify-center py-20">
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
+    </div>
+  )
+}
 
 export default function PromptEvolutionPage() {
   const { promptId } = useParams<{ promptId: string }>()
@@ -35,7 +44,9 @@ export default function PromptEvolutionPage() {
             {t('evolution.startNewRun')}
           </button>
         </div>
-        <EvolutionDashboard runId={activeRunId} />
+        <Suspense fallback={<DashboardFallback />}>
+          <EvolutionDashboard runId={activeRunId} />
+        </Suspense>
       </div>
     )
   }

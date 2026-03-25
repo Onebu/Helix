@@ -119,6 +119,7 @@ export default function RunHistoryTable({ promptId: propPromptId }: RunHistoryTa
     queryKey: ['active-runs'],
     queryFn: () => listActiveRunsApiEvolutionActiveGet(),
     refetchInterval: 5000,
+    refetchIntervalInBackground: false,
   })
   const allActiveRuns: EvolutionRunStatus[] = (activeRunsResp?.data as EvolutionRunStatus[] | undefined) ?? []
   // Filter active runs to only those matching the selected prompt (if one is selected)

@@ -16,7 +16,7 @@ export function PromptCard({ id, purpose, variableCount, anchorCount }: PromptCa
 
   return (
     <Link to={`/prompts/${id}`} className="group">
-      <Card className="relative overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-sm transition-all duration-300 cursor-pointer group-hover:shadow-lg group-hover:shadow-primary/5 group-hover:border-primary/50">
+      <Card className="relative overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-sm transition-[box-shadow,border-color] duration-300 cursor-pointer group-hover:shadow-lg group-hover:shadow-primary/5 group-hover:border-primary/50">
         <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-primary/10 via-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
         <CardHeader>
           <div className="flex items-start gap-2">

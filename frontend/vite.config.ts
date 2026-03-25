@@ -16,6 +16,29 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || id.includes('node_modules/react-router') || id.includes('@tanstack/react-query')) {
+            return 'vendor-react'
+          }
+          if (id.includes('node_modules/recharts') || id.includes('node_modules/victory-vendor')) {
+            return 'vendor-recharts'
+          }
+          if (id.includes('node_modules/d3-')) {
+            return 'vendor-d3'
+          }
+          if (id.includes('node_modules/monaco-editor') || id.includes('@monaco-editor')) {
+            return 'vendor-monaco'
+          }
+          if (id.includes('node_modules/i18next') || id.includes('react-i18next')) {
+            return 'vendor-i18n'
+          }
+        },
+      },
+    },
+  },
   server: {
     host: '0.0.0.0',
     watch: {

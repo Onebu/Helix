@@ -252,11 +252,11 @@ export default function CaseResultsGrid({
         </div>
         <div className="flex h-2 overflow-hidden rounded-full bg-slate-700">
           <div
-            className="bg-emerald-500 transition-all"
+            className="bg-emerald-500 transition-[width]"
             style={{ width: `${passRate}%` }}
           />
           <div
-            className="bg-red-500 transition-all"
+            className="bg-red-500 transition-[width]"
             style={{ width: `${100 - passRate}%` }}
           />
         </div>

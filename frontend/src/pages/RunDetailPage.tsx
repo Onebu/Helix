@@ -1,6 +1,8 @@
+import { lazy, Suspense } from 'react'
 import { useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import EvolutionDashboard from '../components/evolution/EvolutionDashboard'
+
+const EvolutionDashboard = lazy(() => import('../components/evolution/EvolutionDashboard'))
 
 export default function RunDetailPage() {
   const { runId } = useParams<{ runId: string }>()
@@ -12,7 +14,13 @@ export default function RunDetailPage() {
 
   return (
     <div>
-      <EvolutionDashboard runId={runId} />
+      <Suspense fallback={
+        <div className="flex items-center justify-center py-20">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
+        </div>
+      }>
+        <EvolutionDashboard runId={runId} />
+      </Suspense>
     </div>
   )
 }

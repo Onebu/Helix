@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { getPromptApiPromptsPromptIdGet } from '@/client/sdk.gen'
 import { Button } from '@/components/ui/button'
 import PromptDetail from '@/components/prompts/PromptDetail'
-import TemplateEditor from '@/components/prompts/TemplateEditor'
 import VersionHistory from '@/components/prompts/VersionHistory'
+
+const TemplateEditor = lazy(() => import('@/components/prompts/TemplateEditor'))
 
 export default function PromptTemplatePage() {
   const { promptId } = useParams<{ promptId: string }>()
@@ -46,11 +47,17 @@ export default function PromptTemplatePage() {
               {t('common.cancel')}
             </Button>
           </div>
-          <TemplateEditor
-            promptId={promptId}
-            initialTemplate={prompt?.data?.template ?? ''}
-            onSaved={() => setEditing(false)}
-          />
+          <Suspense fallback={
+            <div className="flex items-center justify-center py-20">
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
+            </div>
+          }>
+            <TemplateEditor
+              promptId={promptId}
+              initialTemplate={prompt?.data?.template ?? ''}
+              onSaved={() => setEditing(false)}
+            />
+          </Suspense>
         </div>
       )}
     </div>

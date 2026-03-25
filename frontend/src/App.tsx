@@ -4,28 +4,38 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import AppShell from './components/layout/AppShell'
 import { PromptLayout } from './components/layout/PromptLayout'
 import PromptsPage from './pages/PromptsPage'
-import PromptTemplatePage from './pages/PromptTemplatePage'
-import PromptDatasetPage from './pages/PromptDatasetPage'
-import PromptEvolutionPage from './pages/PromptEvolutionPage'
-import PromptConfigPage from './pages/PromptConfigPage'
-import PromptHistoryPage from './pages/PromptHistoryPage'
-import RunDetailPage from './pages/RunDetailPage'
-import PromptPlaygroundPage from './pages/PromptPlaygroundPage'
-import WizardPage from './pages/WizardPage'
 
+// Route-based code splitting: each page loads only when navigated to
+const PromptTemplatePage = lazy(() => import('./pages/PromptTemplatePage'))
+const PromptDatasetPage = lazy(() => import('./pages/PromptDatasetPage'))
+const PromptEvolutionPage = lazy(() => import('./pages/PromptEvolutionPage'))
+const PromptConfigPage = lazy(() => import('./pages/PromptConfigPage'))
+const PromptHistoryPage = lazy(() => import('./pages/PromptHistoryPage'))
+const RunDetailPage = lazy(() => import('./pages/RunDetailPage'))
+const PromptPlaygroundPage = lazy(() => import('./pages/PromptPlaygroundPage'))
+const WizardPage = lazy(() => import('./pages/WizardPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 
 const queryClient = new QueryClient()
+
+function PageFallback() {
+  return (
+    <div className="flex items-center justify-center py-20">
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
+    </div>
+  )
+}
 
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
+        <Suspense fallback={<PageFallback />}>
         <Routes>
           <Route element={<AppShell />}>
             <Route path="/prompts" element={<PromptsPage />} />
             <Route path="/wizard" element={<WizardPage />} />
-            <Route path="/settings" element={<Suspense fallback={null}><SettingsPage /></Suspense>} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route path="/prompts/:promptId" element={<PromptLayout />}>
               <Route index element={<Navigate to="template" replace />} />
               <Route path="template" element={<PromptTemplatePage />} />
@@ -44,6 +54,7 @@ export default function App() {
             <Route path="/" element={<Navigate to="/prompts" replace />} />
           </Route>
         </Routes>
+        </Suspense>
       </BrowserRouter>
     </QueryClientProvider>
   )
