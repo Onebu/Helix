@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { FileText, ChevronLeft, ChevronRight, Wand2, Dna, Settings, Globe, Menu, X } from 'lucide-react'
+import { FileText, ChevronLeft, ChevronRight, Wand2, Dna, Settings, Globe, Menu, X, Sun, Moon, Monitor } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { useTheme } from '@/hooks/useTheme'
 
 const LANGUAGES = [
   { value: 'en', label: 'English' },
@@ -40,6 +41,7 @@ function CollapsedLink({ to, label, children }: { to: string; label: string; chi
 
 function SidebarContent({ collapsed, setCollapsed, onNavClick }: { collapsed: boolean; setCollapsed: (v: boolean) => void; onNavClick?: () => void }) {
   const { t, i18n } = useTranslation()
+  const { theme, setTheme } = useTheme()
 
   const currentLangIndex = LANGUAGES.findIndex((l) => l.value === i18n.language) ?? 0
 
@@ -47,6 +49,15 @@ function SidebarContent({ collapsed, setCollapsed, onNavClick }: { collapsed: bo
     const nextIndex = (currentLangIndex + 1) % LANGUAGES.length
     i18n.changeLanguage(LANGUAGES[nextIndex].value)
   }
+
+  function cycleTheme() {
+    const order: Array<'light' | 'dark' | 'system'> = ['light', 'dark', 'system']
+    const idx = order.indexOf(theme)
+    setTheme(order[(idx + 1) % order.length])
+  }
+
+  const themeIcon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor
+  const ThemeIcon = themeIcon
 
   const currentLangLabel = LANGUAGES.find((l) => l.value === i18n.language)?.label ?? 'English'
 
@@ -133,9 +144,37 @@ function SidebarContent({ collapsed, setCollapsed, onNavClick }: { collapsed: bo
         </ul>
       </nav>
 
-      {/* Bottom section: Language selector + Settings */}
+      {/* Bottom section: Theme + Language + Settings */}
       <div className={cn('pb-3', collapsed ? '' : 'px-2')}>
         <Separator className={cn('mb-2', collapsed && 'mx-auto w-10')} />
+
+        {/* Theme toggle */}
+        <div className={cn('mb-1', collapsed && 'flex justify-center')}>
+          {collapsed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={cycleTheme}
+                  aria-label={`Theme: ${theme}`}
+                  className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+                >
+                  <ThemeIcon className="h-5 w-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                Theme: {theme}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <button
+              onClick={cycleTheme}
+              className="flex h-10 w-full items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+            >
+              <ThemeIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span className="capitalize">{theme}</span>
+            </button>
+          )}
+        </div>
 
         {/* Language selector */}
         <div className={cn('mb-1', collapsed && 'flex justify-center')}>

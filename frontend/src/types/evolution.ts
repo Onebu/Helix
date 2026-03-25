@@ -127,14 +127,14 @@ export type EvolutionAction =
 // --- Design color constants ---
 
 export const COLORS = {
-  background: '#0f172a',
-  cardBg: '#1e293b',
-  border: '#334155',
-  textPrimary: '#f1f5f9',
-  textSecondary: '#94a3b8',
-  textMuted: '#64748b',
+  background: '#0c1a14',
+  cardBg: '#142620',
+  border: '#243d33',
+  textPrimary: '#f0f5f3',
+  textSecondary: '#8fad9e',
+  textMuted: '#5c7d6d',
   green: '#22c55e',
-  blue: '#3b82f6',
+  blue: '#10b981',
   amber: '#f59e0b',
   red: '#ef4444',
   purple: '#8b5cf6',

@@ -42,43 +42,84 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --font-sans: 'DM Sans', system-ui, sans-serif;
 }
 
-/* Dark theme only -- use dark values as root */
+/*
+ * Helix Design System — Green/Bio Brand
+ * Neutrals tinted toward hue 155 (green) for brand cohesion.
+ * Using OKLCH for perceptual uniformity.
+ */
+
+/* ── Light mode (default) ── */
 :root {
   --radius: 0.625rem;
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  /* Blue accent -- oklch equivalent of #3b82f6 */
-  --primary: oklch(0.623 0.214 259.815);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: oklch(0.98 0.004 155);
+  --foreground: oklch(0.15 0.015 155);
+  --card: oklch(1 0.002 155);
+  --card-foreground: oklch(0.15 0.015 155);
+  --popover: oklch(1 0.002 155);
+  --popover-foreground: oklch(0.15 0.015 155);
+  --primary: oklch(0.6 0.19 155);
+  --primary-foreground: oklch(0.995 0 155);
+  --secondary: oklch(0.94 0.012 155);
+  --secondary-foreground: oklch(0.25 0.02 155);
+  --muted: oklch(0.94 0.012 155);
+  --muted-foreground: oklch(0.46 0.02 155);
+  --accent: oklch(0.93 0.015 155);
+  --accent-foreground: oklch(0.25 0.02 155);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.15 0.015 155 / 12%);
+  --input: oklch(0.15 0.015 155 / 12%);
+  --ring: oklch(0.6 0.19 155);
+  --chart-1: oklch(0.6 0.19 155);
+  --chart-2: oklch(0.7 0.17 70);
+  --chart-3: oklch(0.55 0.22 300);
+  --chart-4: oklch(0.65 0.15 200);
+  --chart-5: oklch(0.62 0.2 25);
+  --sidebar: oklch(0.97 0.006 155);
+  --sidebar-foreground: oklch(0.15 0.015 155);
+  --sidebar-primary: oklch(0.6 0.19 155);
+  --sidebar-primary-foreground: oklch(0.995 0 155);
+  --sidebar-accent: oklch(0.93 0.015 155);
+  --sidebar-accent-foreground: oklch(0.25 0.02 155);
+  --sidebar-border: oklch(0.15 0.015 155 / 10%);
+  --sidebar-ring: oklch(0.6 0.19 155);
+}
+
+/* ── Dark mode ── */
+.dark {
+  --background: oklch(0.135 0.012 155);
+  --foreground: oklch(0.96 0.006 155);
+  --card: oklch(0.185 0.014 155);
+  --card-foreground: oklch(0.96 0.006 155);
+  --popover: oklch(0.185 0.014 155);
+  --popover-foreground: oklch(0.96 0.006 155);
+  --primary: oklch(0.65 0.19 155);
+  --primary-foreground: oklch(0.995 0 155);
+  --secondary: oklch(0.235 0.016 155);
+  --secondary-foreground: oklch(0.96 0.006 155);
+  --muted: oklch(0.235 0.016 155);
+  --muted-foreground: oklch(0.65 0.012 155);
+  --accent: oklch(0.235 0.016 155);
+  --accent-foreground: oklch(0.96 0.006 155);
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.623 0.214 259.815);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.145 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.623 0.214 259.815);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.65 0.19 155);
+  --chart-1: oklch(0.65 0.19 155);
+  --chart-2: oklch(0.75 0.17 70);
+  --chart-3: oklch(0.6 0.22 300);
+  --chart-4: oklch(0.7 0.15 200);
+  --chart-5: oklch(0.65 0.2 25);
+  --sidebar: oklch(0.135 0.012 155);
+  --sidebar-foreground: oklch(0.96 0.006 155);
+  --sidebar-primary: oklch(0.65 0.19 155);
+  --sidebar-primary-foreground: oklch(0.995 0 155);
+  --sidebar-accent: oklch(0.235 0.016 155);
+  --sidebar-accent-foreground: oklch(0.96 0.006 155);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.623 0.214 259.815);
+  --sidebar-ring: oklch(0.65 0.19 155);
 }
 
 @layer base {
@@ -89,7 +130,9 @@
     @apply bg-background text-foreground;
     min-height: 100vh;
     margin: 0;
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 
@@ -105,7 +148,7 @@
   }
 }
 
-/* Dash animation for island migration lines (moved from inline <style>) */
+/* Dash animation for island migration lines */
 @keyframes dash {
   to {
     stroke-dashoffset: -20;

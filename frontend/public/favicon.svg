@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
   <defs>
     <linearGradient id="g1" x1="8" y1="2" x2="24" y2="30" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#7c3aed"/>
-      <stop offset="1" stop-color="#3b82f6"/>
+      <stop offset="0" stop-color="#10b981"/>
+      <stop offset="1" stop-color="#059669"/>
     </linearGradient>
     <linearGradient id="g2" x1="24" y1="2" x2="8" y2="30" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#3b82f6"/>
-      <stop offset="1" stop-color="#7c3aed"/>
+      <stop offset="0" stop-color="#059669"/>
+      <stop offset="1" stop-color="#10b981"/>
     </linearGradient>
   </defs>
   <!-- Left strand -->
@@ -14,8 +14,8 @@
   <!-- Right strand -->
   <path d="M24 2 C24 8, 8 10, 8 16 C8 22, 24 24, 24 30" stroke="url(#g2)" stroke-width="3" stroke-linecap="round" fill="none"/>
   <!-- Rungs -->
-  <line x1="11" y1="7" x2="21" y2="7" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
-  <line x1="9" y1="13" x2="23" y2="13" stroke="#93c5fd" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
-  <line x1="9" y1="19" x2="23" y2="19" stroke="#93c5fd" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
-  <line x1="11" y1="25" x2="21" y2="25" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+  <line x1="11" y1="7" x2="21" y2="7" stroke="#34d399" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+  <line x1="9" y1="13" x2="23" y2="13" stroke="#6ee7b7" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+  <line x1="9" y1="19" x2="23" y2="19" stroke="#6ee7b7" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+  <line x1="11" y1="25" x2="21" y2="25" stroke="#34d399" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
 </svg>
