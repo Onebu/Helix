@@ -20,6 +20,7 @@ import HyperparameterDisplay from './HyperparameterDisplay'
 
 const Islands3D = lazy(() => import('./Islands3D'))
 const Lineage3D = lazy(() => import('./Lineage3D'))
+import LineageGraph from './LineageGraph'
 
 interface EvolutionDashboardProps {
   runId: string
@@ -67,10 +68,12 @@ function OverviewContent({
   state,
   hyperparameters,
   lineageEvents,
+  bestCandidateId,
 }: {
   state: ReturnType<typeof useEvolutionSocket>
   hyperparameters?: Record<string, unknown> | null
   lineageEvents?: LineageNode[]
+  bestCandidateId?: string | null
 }) {
   const configuredIslands = (hyperparameters?.n_islands as number) || 4
   return (
@@ -94,6 +97,14 @@ function OverviewContent({
           />
         </div>
       </div>
+
+      {/* Lineage graph (post-run only, when lineage data exists) */}
+      {lineageEvents && lineageEvents.length > 0 && (
+        <LineageGraph
+          lineageEvents={lineageEvents}
+          bestCandidateId={bestCandidateId ?? null}
+        />
+      )}
 
       {/* Generation table */}
       <GenerationTable data={state.generations} isLive={state.status === 'running'} />
@@ -374,7 +385,7 @@ export default function EvolutionDashboard({ runId }: EvolutionDashboardProps) {
 
           {activeTab === 'overview' && (
             <div className="mt-6 space-y-6">
-              <OverviewContent state={effectiveState} hyperparameters={hyperparameters as Record<string, unknown> | null} lineageEvents={results?.lineageEvents} />
+              <OverviewContent state={effectiveState} hyperparameters={hyperparameters as Record<string, unknown> | null} lineageEvents={results?.lineageEvents} bestCandidateId={results?.bestCandidateId} />
             </div>
           )}
           {activeTab === 'prompt-diffs' && (
@@ -414,12 +425,10 @@ export default function EvolutionDashboard({ runId }: EvolutionDashboardProps) {
           )}
           {activeTab === 'lineage' && (
             <div className="mt-6">
-              <Suspense fallback={<div className="flex items-center justify-center h-[500px]"><p className="text-muted-foreground">Loading 3D view...</p></div>}>
-                <Lineage3D
-                  lineageEvents={results?.lineageEvents ?? []}
-                  bestCandidateId={results?.bestCandidateId ?? null}
-                />
-              </Suspense>
+              <LineageGraph
+                lineageEvents={results?.lineageEvents ?? []}
+                bestCandidateId={results?.bestCandidateId ?? null}
+              />
             </div>
           )}
         </div>
