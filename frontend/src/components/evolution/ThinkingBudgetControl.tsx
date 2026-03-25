@@ -1,4 +1,3 @@
-import { useTranslation } from 'react-i18next'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 
 interface ThinkingBudgetControlProps {
@@ -53,7 +52,6 @@ export default function ThinkingBudgetControl({
   onLevelChange,
 }: ThinkingBudgetControlProps) {
   // Only show for Gemini provider with a selected model
-  const { t } = useTranslation()
   if (provider !== 'gemini' || !modelId) return null
 
   if (isGemini25(modelId)) {
