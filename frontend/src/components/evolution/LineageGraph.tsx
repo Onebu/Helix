@@ -90,7 +90,12 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
       for (const pid of e.parentIds) {
         if (depedIdx.has(pid)) maxParentDepth = Math.max(maxParentDepth, computeDepth(pid, visited))
       }
-      const d = maxParentDepth + 1
+      // Clones (identical template to parent) stay at the same depth as parent
+      // This collapses island-distribution clones into the same generation row
+      const parent = e.parentIds.length > 0 ? depedIdx.get(e.parentIds[0]) : null
+      const isClone = parent && e.template !== undefined && parent.template !== undefined
+        && e.template.trim() === parent.template.trim()
+      const d = isClone ? maxParentDepth : maxParentDepth + 1
       depthCache.set(id, d)
       return d
     }
