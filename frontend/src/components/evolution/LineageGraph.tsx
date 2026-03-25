@@ -230,9 +230,10 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
 
   return (
     <div className="rounded-lg border border-border bg-card">
-      {/* Legend */}
-      <div className="sticky top-0 z-10 flex items-center gap-4 px-4 py-2 border-b border-border bg-card/95 backdrop-blur-sm text-xs text-muted-foreground">
-        <span className="font-medium text-foreground">Mutation types:</span>
+      {/* Header + Legend */}
+      <div className="sticky top-0 z-10 flex items-center gap-4 px-4 py-3 border-b border-border bg-card/95 backdrop-blur-sm text-xs text-muted-foreground">
+        <h3 className="text-sm font-semibold text-foreground shrink-0">Evolution Lineage</h3>
+        <span className="text-border">|</span>
         {Object.entries(MUTATION_COLORS).map(([type, color]) => (
           <span key={type} className="inline-flex items-center gap-1.5">
             <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />

@@ -248,6 +248,7 @@ export default function CaseResultsGrid({
       {/* Summary stats bar */}
       <div className="rounded-lg border border-border bg-card p-4">
         <div className="mb-2 flex items-center gap-4 text-sm">
+          <h3 className="text-sm font-semibold text-foreground">Case Results</h3>
           <span className="text-muted-foreground">
             {t('evolution.totalCases', { count: caseResults.length })}
           </span>
