@@ -148,7 +148,28 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
       }
 
       const isSeed = depth === 0 && depthNodes.some(n => n.mutationType === 'seed' || n.mutationType === 'seed_variant')
-      genLabelsArr.push({ label: isSeed ? 'Seed' : `Gen ${depth}`, y })
+      // Use actual generation numbers from lineage data for labels (not computed depth)
+      // to stay in sync with the fitness chart which uses generation_records
+      if (isSeed) {
+        genLabelsArr.push({ label: 'Seed', y })
+      } else {
+        // Find the actual backend generation for nodes at this depth
+        const actualGens = depthNodes.map(n => depedIdx.get(n.id)?.generation ?? 0)
+        const maxActualGen = Math.max(...actualGens, 0)
+        // Backend generation is 0-indexed; chart displays as 1-indexed
+        const genLabel = `Gen ${maxActualGen + 1}`
+        // If same gen label already exists, add round letter suffix (a, b, c...)
+        const existing = genLabelsArr.filter(l => l.label === genLabel || l.label.startsWith(genLabel + ' '))
+        if (existing.length === 0) {
+          genLabelsArr.push({ label: genLabel, y })
+        } else {
+          // First occurrence gets renamed with "round 1", this one gets "round N"
+          if (existing.length === 1 && existing[0].label === genLabel) {
+            existing[0].label = `${genLabel} — round 1`
+          }
+          genLabelsArr.push({ label: `${genLabel} — round ${existing.length + 1}`, y })
+        }
+      }
     }
 
     const edgeArray: LayoutEdge[] = []
