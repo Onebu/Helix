@@ -12,15 +12,14 @@ import { cn } from '@/lib/utils'
 import FitnessChart from './FitnessChart'
 import SummaryCards from './SummaryCards'
 import GenerationTable from './GenerationTable'
-import IslandsView from './IslandsView'
+import IslandsSummary from './IslandsSummary'
 import DiffViewer from './DiffViewer'
 import MutationStats from './MutationStats'
 import CaseResultsGrid from './CaseResultsGrid'
 import HyperparameterDisplay from './HyperparameterDisplay'
+import LineageGraph from './LineageGraph'
 
 const Islands3D = lazy(() => import('./Islands3D'))
-const Lineage3D = lazy(() => import('./Lineage3D'))
-import LineageGraph from './LineageGraph'
 
 interface EvolutionDashboardProps {
   runId: string
@@ -87,13 +86,12 @@ function OverviewContent({
           <FitnessChart data={state.generations} isLive={state.status === 'running'} />
         </div>
         <div className="lg:col-span-2">
-          <IslandsView
+          <IslandsSummary
             candidates={state.candidates}
             migrations={state.migrations}
             islandCount={state.islandCount || configuredIslands}
             status={state.status}
             seedFitness={state.summary.seedFitness}
-            lineageEvents={lineageEvents}
           />
         </div>
       </div>
@@ -358,11 +356,9 @@ export default function EvolutionDashboard({ runId }: EvolutionDashboardProps) {
             <div className="flex items-center gap-1 border-b border-border" role="tablist" aria-label="Evolution results">
               {[
                 { value: 'overview', label: 'Overview' },
-                { value: 'lineage', label: 'Lineage' },
                 { value: 'prompt-diffs', label: 'Prompt Diffs' },
                 { value: 'mutation-stats', label: 'Mutation Stats' },
                 { value: 'case-results', label: 'Case Results' },
-                { value: '3d-islands', label: '3D Islands' },
               ].map((tab) => (
                 <button
                   key={tab.value}
@@ -410,27 +406,8 @@ export default function EvolutionDashboard({ runId }: EvolutionDashboardProps) {
               />
             </div>
           )}
-          {activeTab === '3d-islands' && (
-            <div className="mt-6">
-              <Suspense fallback={<div className="flex items-center justify-center h-[500px]"><p className="text-muted-foreground">Loading 3D view...</p></div>}>
-                <Islands3D
-                  candidates={effectiveState.candidates}
-                  migrations={effectiveState.migrations}
-                  islandCount={effectiveState.islandCount || (hyperparameters?.n_islands as number) || 4}
-                  seedFitness={effectiveState.summary.seedFitness}
-                  lineageEvents={results?.lineageEvents}
-                />
-              </Suspense>
-            </div>
-          )}
-          {activeTab === 'lineage' && (
-            <div className="mt-6">
-              <LineageGraph
-                lineageEvents={results?.lineageEvents ?? []}
-                bestCandidateId={results?.bestCandidateId ?? null}
-              />
-            </div>
-          )}
+
+
         </div>
       ) : (
         <div className="space-y-6">

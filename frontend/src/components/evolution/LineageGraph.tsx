@@ -3,7 +3,6 @@ import type { LineageNode } from '../../types/evolution'
 import { MUTATION_COLORS } from '../../types/evolution'
 import { fitnessColor, REJECTED_OPACITY, ACTIVE_OPACITY, getDotRadius } from '../../lib/scoring'
 import { traceWinningPath, deduplicateEvents } from '../../lib/lineage-utils'
-import { DiffPopover } from './DiffPopover'
 
 interface LineageGraphProps {
   lineageEvents: LineageNode[]
@@ -41,33 +40,7 @@ const LABEL_WIDTH = 48
 
 export default function LineageGraph({ lineageEvents, bestCandidateId }: LineageGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const [containerDims, setContainerDims] = useState({ width: 800, height: 500 })
   const [tooltip, setTooltip] = useState<{ x: number; y: number; node: LayoutNode } | null>(null)
-
-  // DiffPopover hover state
-  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [hoverTarget, setHoverTarget] = useState<{ candidateId: string; x: number; y: number } | null>(null)
-
-  const lineageIndex = useMemo(() => {
-    const map = new Map<string, LineageNode>()
-    for (const e of lineageEvents) map.set(e.candidateId, e)
-    return map
-  }, [lineageEvents])
-
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const ro = new ResizeObserver(() => {
-      setContainerDims({ width: el.clientWidth, height: el.clientHeight })
-    })
-    ro.observe(el)
-    setContainerDims({ width: el.clientWidth, height: el.clientHeight })
-    return () => ro.disconnect()
-  }, [])
-
-  useEffect(() => {
-    return () => { if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current) }
-  }, [])
 
   // Layout computation
   const { nodes, edges, svgWidth, svgHeight, genLabels } = useMemo(() => {
@@ -196,20 +169,11 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
     const rect = container.getBoundingClientRect()
     const x = event.clientX - rect.left
     const y = event.clientY - rect.top
-
     setTooltip({ x, y, node })
-    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current)
-    if (lineageIndex.has(node.id)) {
-      hoverTimerRef.current = setTimeout(() => {
-        setHoverTarget({ candidateId: node.id, x, y })
-      }, 300)
-    }
-  }, [lineageIndex])
+  }, [])
 
   const handleNodeLeave = useCallback(() => {
     setTooltip(null)
-    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current)
-    setHoverTarget(null)
   }, [])
 
   // Node position lookup
@@ -422,17 +386,8 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
         </div>
       )}
 
-      {/* DiffPopover */}
-      {hoverTarget && lineageEvents.length > 0 && (
-        <DiffPopover
-          candidateId={hoverTarget.candidateId}
-          x={hoverTarget.x}
-          y={hoverTarget.y}
-          containerWidth={containerDims.width}
-          containerHeight={containerDims.height}
-          lineageIndex={lineageIndex}
-        />
-      )}
+
+
     </div>
   )
 }
