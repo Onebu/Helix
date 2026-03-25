@@ -37,11 +37,7 @@ Helix 自带 Web 界面，支持配置管理、实时监控进化过程，也能
 | 模板与工具 | 进化结果 | 谱系树 |
 |:---:|:---:|:---:|
 | ![模板](docs/screenshots/template-tab.png) | ![运行详情](docs/screenshots/run-detail.png) | ![谱系](docs/screenshots/lineage.png) |
-| 模板预览与格式化工具卡片 | 适应度曲线与岛屿拓扑 | 候选的进化谱系树 |
-
-### 运行分析 — Diff 对比、谱系与测试结果
-
-![运行分析](docs/screenshots/helix-run-analysis.gif)
+| 模板预览与格式化工具卡片 | 适应度曲线与岛屿概览 | 进化谱系图（点击查看差异） |
 
 ## 快速开始
 

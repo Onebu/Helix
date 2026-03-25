@@ -37,11 +37,7 @@ Helix includes a web dashboard for configuration, real-time monitoring during ev
 | Template & Tools | Evolution Results | Lineage Tree |
 |:---:|:---:|:---:|
 | ![Template](docs/screenshots/template-tab.png) | ![Run Detail](docs/screenshots/run-detail.png) | ![Lineage](docs/screenshots/lineage.png) |
-| Template preview with formatted tool cards | Fitness progression & island topology | Phylogenetic tree of evolved candidates |
-
-### Run Analysis — Diffs, Lineage & Test Results
-
-![Run Analysis](docs/screenshots/helix-run-analysis.gif)
+| Template preview with formatted tool cards | Fitness progression & island summary | Evolution lineage with click-to-diff |
 
 ## Quickstart
 
