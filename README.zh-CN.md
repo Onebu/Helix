@@ -6,17 +6,17 @@
 
 <h1 align="center">Helix</h1>
 
-用自动化测试驱动的 LLM 提示词进化工具。给 Helix 一组测试用例，它会自动优化你的提示词——直到全部通过，同时确保已有功能不被破坏。
+基于自动化测试的 LLM 提示词进化引擎。给 Helix 一组测试用例，它会自动优化你的提示词——直到全部通过，同时不影响已有功能。
 
 ## Helix 是什么？
 
 给定一个提示词模板和一组测试用例，Helix 会用遗传算法自动搜索最优的提示词。整个过程全自动：评估 → 选择 → 多轮 LLM 对话优化 → 变异 → 迭代。
 
-多个独立种群（"岛屿"）并行进化，定期交换各自的优秀候选。每个岛屿内部，RCC 机制让一个 LLM 扮演"批评者"找出提示词的问题，再让另一个 LLM 扮演"作者"针对性地修改。玻尔兹曼选择确保在"用好的"和"试新的"之间保持平衡。
+多个独立种群（"岛屿"）并行进化，定期交换各自的优秀候选。每个岛屿内部通过 RCC 机制优化：一个 LLM 扮演批评者，找出提示词的问题；另一个扮演作者，做针对性修改。玻尔兹曼选择则在"用好已有的"和"尝试新方向"之间取得平衡。
 
 核心原则：**改了不能退步**。测试用例分关键、普通、低优先级三个层级，适应度函数对关键用例的退步惩罚极重。
 
-Helix 自带 Web 界面，支持配置管理、进化过程的实时监控，以及运行后的详细分析（谱系树、提示词差异对比、变异效果统计等）。
+Helix 自带 Web 界面，支持配置管理、实时监控进化过程，也能在运行后做详细分析（谱系树、提示词 Diff 对比、变异效果统计等）。
 
 ## 主要特性
 
@@ -25,7 +25,7 @@ Helix 自带 Web 界面，支持配置管理、进化过程的实时监控，以
 - **段落级结构变异**，自动保留 `{{ 模板变量 }}`
 - **分层回归测试**：关键 / 普通 / 低三个优先级
 - **多 LLM 支持**：Gemini、OpenAI、OpenRouter、Anthropic 一键切换
-- **实时监控**：WebSocket 推送进化过程到浏览器
+- **实时监控**：通过 WebSocket 将进化过程推送至浏览器
 - **交互式 Playground**：直接和优化后的提示词聊天测试
 - **工具调用模拟**：LLM 自动生成 mock 响应
 - **3D 可视化**：岛屿拓扑图、候选谱系树
@@ -37,9 +37,9 @@ Helix 自带 Web 界面，支持配置管理、进化过程的实时监控，以
 | 模板与工具 | 进化结果 | 谱系树 |
 |:---:|:---:|:---:|
 | ![模板](docs/screenshots/template-tab.png) | ![运行详情](docs/screenshots/run-detail.png) | ![谱系](docs/screenshots/lineage.png) |
-| 模板预览与格式化工具卡片 | 适应度曲线与岛屿拓扑 | 进化候选者的系谱树 |
+| 模板预览与格式化工具卡片 | 适应度曲线与岛屿拓扑 | 候选的进化谱系树 |
 
-### 运行分析 — 差异对比、谱系与测试结果
+### 运行分析 — Diff 对比、谱系与测试结果
 
 ![运行分析](docs/screenshots/helix-run-analysis.gif)
 
@@ -66,13 +66,13 @@ cd helix
 cp .env.example .env
 ```
 
-编辑 `.env` 并设置你的 API 密钥：
+编辑 `.env`，填入你的 API Key：
 
 ```
 GENE_GEMINI_API_KEY=your-key-here
 ```
 
-所有可用选项请参见[环境变量参考](docs/SETUP.md#environment-variables-reference)。
+完整选项请参见[环境变量参考](docs/SETUP.md#environment-variables-reference)。
 
 ### 3. 启动后端
 
@@ -89,9 +89,9 @@ npm install
 npm run dev
 ```
 
-### 5. 打开仪表板
+### 5. 打开界面
 
-在浏览器中导航至 [http://localhost:5173](http://localhost:5173)。
+浏览器访问 [http://localhost:5173](http://localhost:5173) 即可。
 
 ### 替代方案：Docker
 
@@ -101,18 +101,18 @@ npm run dev
 docker compose up --build
 ```
 
-这将启动后端、前端（通过 nginx 在端口 80）和 SQLite 数据库。访问 [http://localhost](http://localhost) 使用仪表板。
+会启动后端、前端（nginx 监听 80 端口）和 SQLite 数据库。访问 [http://localhost](http://localhost) 即可使用。
 
 ## 架构概览
 
 ```
 api/
-  web/            FastAPI REST + WebSocket 端点
-  config/         环境变量配置加载（Pydantic Settings）
+  web/            FastAPI REST + WebSocket 接口
+  config/         配置加载（Pydantic Settings + 环境变量）
   dataset/        测试用例管理
   evaluation/     适应度评分、采样、聚合
   evolution/      核心循环、岛屿、RCC、变异、选择
-  gateway/        LLM 提供商注册、重试、成本追踪
+  gateway/        LLM 提供商注册、重试、费用追踪
   lineage/        候选者谱系追踪
   registry/       提示词注册和段落管理
   storage/        SQLAlchemy ORM（SQLite/PostgreSQL）
@@ -125,11 +125,11 @@ frontend/src/
   i18n/           翻译文件（en、zh、es）
 ```
 
-**后端**：FastAPI 工厂模式，SQLAlchemy 2.0 异步 ORM，pydantic-settings 配置级联，具有岛屿模型并行性的异步进化引擎。
+**后端**：FastAPI 工厂模式 + SQLAlchemy 2.0 异步 ORM + pydantic-settings 配置管理。进化引擎基于岛屿模型实现并行。
 
-**前端**：React 19 + Vite + TypeScript + Tailwind CSS v4 + shadcn/ui。Recharts 用于适应度图表，D3 用于系谱树，React Three Fiber 用于 3D 视图（延迟加载）。
+**前端**：React 19 + Vite + TypeScript + Tailwind CSS v4 + shadcn/ui。适应度图表用 Recharts，谱系树用 D3，3D 视图用 React Three Fiber（按需加载）。
 
-**通信**：REST 用于 CRUD，WebSocket 用于实时进化事件，SSE 用于聊天游乐场流式传输。
+**通信**：CRUD 操作走 REST，进化事件实时推送走 WebSocket，Playground 聊天流式输出走 SSE。
 
 详细架构文档请参见 [CLAUDE.md](CLAUDE.md)。
 
@@ -178,9 +178,9 @@ frontend/src/
 
 **玻尔兹曼选择** — Softmax 加权父代采样：`P(i) = exp((fitness_i - max) / T) / Z`。温度控制探索与利用的平衡。
 
-**RCC（通过批判性对话进行优化）** — 多轮批评者-作者对话，元模型诊断失败然后用最小、针对性的编辑重写提示词。
+**RCC（Refinement through Critical Conversation）** — 多轮批评者-作者对话，元模型先诊断失败原因，再以最小改动重写提示词。
 
-**结构变异** — 段落级重组（重排、拆分、合并），带语法验证。以可配置概率应用（默认 20%）。
+**结构变异** — 段落级重组（重排、拆分、合并），带语法校验，默认以 20% 概率触发。
 
 **多岛屿模型** — 并行子种群，循环迁移并定期重置停滞的岛屿。
 
@@ -194,11 +194,11 @@ frontend/src/
 | 仅 `behavior` | BehaviorJudgeScorer | LLM 裁判逐条评估 |
 | 两者都有 | 组合 | 先 ExactMatch，然后 BehaviorJudge |
 
-分数按层级乘数聚合：关键 (5x)、普通 (1x)、低 (0.25x)。适应度为 0.0 表示所有用例通过。
+分数按层级加权聚合：关键 (5x)、普通 (1x)、低 (0.25x)。适应度为 0.0 表示全部通过。
 
 ### 配置参考
 
-| 参数 | 默认值 | 描述 |
+| 参数 | 默认值 | 说明 |
 |------|--------|------|
 | `generations` | 10 | 进化代数 |
 | `n_islands` | 4 | 并行岛屿种群数 |
@@ -228,7 +228,7 @@ frontend/src/
 
 ## 参考文献
 
-基于 [Mind Evolution: Evolutionary Optimization of LLM Prompts](https://arxiv.org/abs/2501.09891)（Google DeepMind, 2025）的思想。
+基于 [Mind Evolution: Evolutionary Optimization of LLM Prompts](https://arxiv.org/abs/2501.09891)（Google DeepMind, 2025）的研究思路。
 
 ## 许可证
 
