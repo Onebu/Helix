@@ -36,9 +36,9 @@ interface LayoutEdge {
 // Layout
 const ROW_HEIGHT = 80
 const NODE_GAP = 44
-const PADDING_X = 60
+const PADDING_X = 70
 const PADDING_Y = 50
-const LABEL_WIDTH = 48
+const LABEL_WIDTH = 56
 
 function DiffLineRow({ line }: { line: DiffLine }) {
   if (line.type === 'hunk') {
@@ -153,21 +153,19 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
       if (isSeed) {
         genLabelsArr.push({ label: 'Seed', y })
       } else {
-        // Find the actual backend generation for nodes at this depth
         const actualGens = depthNodes.map(n => depedIdx.get(n.id)?.generation ?? 0)
         const maxActualGen = Math.max(...actualGens, 0)
-        // Backend generation is 0-indexed; chart displays as 1-indexed
-        const genLabel = `Gen ${maxActualGen + 1}`
-        // If same gen label already exists, add round letter suffix (a, b, c...)
-        const existing = genLabelsArr.filter(l => l.label === genLabel || l.label.startsWith(genLabel + ' '))
+        const genNum = maxActualGen + 1
+        // Count how many rows already exist for this generation
+        const existing = genLabelsArr.filter(l => l.label.startsWith(`Gen ${genNum}`))
         if (existing.length === 0) {
-          genLabelsArr.push({ label: genLabel, y })
+          genLabelsArr.push({ label: `Gen ${genNum}`, y })
         } else {
-          // First occurrence gets renamed with "round 1", this one gets "round N"
-          if (existing.length === 1 && existing[0].label === genLabel) {
-            existing[0].label = `${genLabel} — round 1`
+          // Multiple depth levels within same generation: use a/b/c suffix
+          if (existing.length === 1 && !existing[0].label.includes('.')) {
+            existing[0].label = `Gen ${genNum}.1`
           }
-          genLabelsArr.push({ label: `${genLabel} — round ${existing.length + 1}`, y })
+          genLabelsArr.push({ label: `Gen ${genNum}.${existing.length + 1}`, y })
         }
       }
     }
