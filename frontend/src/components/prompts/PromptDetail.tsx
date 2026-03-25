@@ -7,7 +7,6 @@ import {
   getPromptApiPromptsPromptIdGet,
   listCasesApiPromptsPromptIdDatasetGet,
 } from '@/client/sdk.gen'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -59,24 +58,24 @@ interface Tool {
 function PromptDetailSkeleton() {
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
+      <div className="rounded-lg border border-border bg-card overflow-hidden">
+        <div className="px-4 py-3 border-b border-border">
           <Skeleton className="h-7 w-[200px]" />
+        </div>
+        <div className="p-4 space-y-3">
           <Skeleton className="h-4 w-[350px]" />
-        </CardHeader>
-        <CardContent>
           <div className="flex gap-2">
             <Skeleton className="h-5 w-16 rounded-full" />
             <Skeleton className="h-5 w-16 rounded-full" />
             <Skeleton className="h-5 w-16 rounded-full" />
           </div>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent className="pt-6">
+        </div>
+      </div>
+      <div className="rounded-lg border border-border bg-card overflow-hidden">
+        <div className="p-4">
           <Skeleton className="h-[200px] w-full" />
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   )
 }
@@ -119,19 +118,19 @@ function TemplatePreviewSection({
       : template
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-        <CardTitle className="flex items-center gap-2 text-sm font-medium">
-          <FileText className="h-4 w-4 text-muted-foreground" />
+    <div className="rounded-lg border border-border bg-card overflow-hidden">
+      <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <FileText className="h-4 w-4" />
           {t('prompts.templatePreview')}
-        </CardTitle>
+        </h3>
         {onEdit && (
           <Button variant="ghost" size="sm" onClick={onEdit}>
             {t('prompts.editTemplate')}
           </Button>
         )}
-      </CardHeader>
-      <CardContent>
+      </div>
+      <div className="p-4">
         <pre className="overflow-auto rounded bg-muted p-4 text-sm text-foreground whitespace-pre-wrap break-words font-mono leading-relaxed">
           {highlightTemplateVariables(displayText)}
           {isLong && !expanded && (
@@ -150,8 +149,8 @@ function TemplatePreviewSection({
               : t('prompts.showAll', { count: lines.length })}
           </Button>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
 
@@ -241,14 +240,14 @@ function VariablesSchemaSection({
   const { t } = useTranslation()
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-sm font-medium">
-          <Code2 className="h-4 w-4 text-muted-foreground" />
+    <div className="rounded-lg border border-border bg-card overflow-hidden">
+      <div className="px-4 py-3 border-b border-border">
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Code2 className="h-4 w-4" />
           {t('prompts.variablesAndSchema')}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
+        </h3>
+      </div>
+      <div className="p-4">
         {variableDefs.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             {t('prompts.noVariables')}
@@ -260,8 +259,8 @@ function VariablesSchemaSection({
             ))}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
 
@@ -369,16 +368,16 @@ function ToolsSection({ tools }: { tools: Tool[] }) {
   const { t } = useTranslation()
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-sm font-medium">
-          <Wrench className="h-4 w-4 text-muted-foreground" />
+    <div className="rounded-lg border border-border bg-card overflow-hidden">
+      <div className="px-4 py-3 border-b border-border">
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Wrench className="h-4 w-4" />
           {tools.length > 0
             ? t('prompts.toolsCount', { count: tools.length })
             : t('prompts.tools')}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
+        </h3>
+      </div>
+      <div className="p-4">
         {tools.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             {t('prompts.noTools')}
@@ -390,8 +389,8 @@ function ToolsSection({ tools }: { tools: Tool[] }) {
             ))}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
 
@@ -431,14 +430,14 @@ function TestCasesPreviewSection({ promptId }: { promptId: string }) {
   }, [cases])
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-sm font-medium">
-          <FlaskConical className="h-4 w-4 text-muted-foreground" />
+    <div className="rounded-lg border border-border bg-card overflow-hidden">
+      <div className="px-4 py-3 border-b border-border">
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <FlaskConical className="h-4 w-4" />
           {t('prompts.testCases')}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
+        </h3>
+      </div>
+      <div className="p-4">
         {total === 0 ? (
           <p className="text-sm text-muted-foreground">
             {t('prompts.noTestCases')}
@@ -460,8 +459,8 @@ function TestCasesPreviewSection({ promptId }: { promptId: string }) {
             <Link to="../dataset">{t('prompts.viewDatasetTab')}</Link>
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
 

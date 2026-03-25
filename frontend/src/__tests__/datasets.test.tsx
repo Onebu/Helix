@@ -155,10 +155,10 @@ describe('CaseList', () => {
     renderWithProviders(<CaseList promptId="test-prompt" />)
 
     await waitFor(() => {
-      expect(screen.getByText('Add Case')).toBeInTheDocument()
+      expect(screen.getByText('Add Test Case')).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByText('Add Case'))
+    fireEvent.click(screen.getByText('Add Test Case'))
 
     await waitFor(() => {
       // Sheet opens with editor title in h2 element

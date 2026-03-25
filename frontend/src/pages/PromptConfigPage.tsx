@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Zap, Target, Scale, Wrench, Save, Loader2, X, Settings2, Plus, Trash2, AlertTriangle, Play, ChevronDown } from 'lucide-react'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+// Card components removed — using unified card pattern (rounded-lg border border-border bg-card)
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -88,10 +88,10 @@ const CONFIG_PRESETS: Record<string, Preset> = {
 // --- Role icon mapping (text comes from t()) ---
 
 const ROLE_ICONS: Record<'meta' | 'target' | 'judge' | 'tool_mocker', React.ReactNode> = {
-  meta: <Zap className="h-5 w-5 text-amber-500" />,
-  target: <Target className="h-5 w-5 text-blue-500" />,
-  judge: <Scale className="h-5 w-5 text-purple-500" />,
-  tool_mocker: <Wrench className="h-5 w-5 text-green-500" />,
+  meta: <Zap className="h-4 w-4 text-amber-500" />,
+  target: <Target className="h-4 w-4 text-blue-500" />,
+  judge: <Scale className="h-4 w-4 text-purple-500" />,
+  tool_mocker: <Wrench className="h-4 w-4 text-green-500" />,
 }
 
 const ROLE_DEFAULT_FOR: Record<string, string> = {
@@ -489,20 +489,24 @@ export default function PromptConfigPage() {
   return (
     <div className="space-y-6 pb-10">
       {/* Preset buttons */}
-      <div>
-        <h3 className="text-sm font-medium text-muted-foreground mb-2">{t('config.quickPresets')}</h3>
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(CONFIG_PRESETS).map(([key, preset]) => (
-            <Button
-              key={key}
-              variant="outline"
-              size="sm"
-              onClick={() => applyPreset(key)}
-              disabled={saveMutation.isPending}
-            >
-              {preset.label}
-            </Button>
-          ))}
+      <div className="rounded-lg border border-border bg-card overflow-hidden">
+        <div className="px-4 py-3 border-b border-border">
+          <h3 className="text-sm font-semibold text-foreground">{t('config.quickPresets')}</h3>
+        </div>
+        <div className="p-4">
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(CONFIG_PRESETS).map(([key, preset]) => (
+              <Button
+                key={key}
+                variant="outline"
+                size="sm"
+                onClick={() => applyPreset(key)}
+                disabled={saveMutation.isPending}
+              >
+                {preset.label}
+              </Button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -529,33 +533,33 @@ export default function PromptConfigPage() {
         />
       </div>
 
-      {/* Save button */}
-      <div className="flex items-center gap-3">
-        <Button onClick={handleSave} disabled={!isDirty || saveMutation.isPending}>
-          {saveMutation.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-          ) : (
-            <Save className="h-4 w-4 mr-2" />
+      {/* Save button + Status Banner */}
+      <div className="rounded-lg border border-border bg-card overflow-hidden">
+        <div className="px-4 py-3 flex items-center gap-3">
+          <Button onClick={handleSave} disabled={!isDirty || saveMutation.isPending}>
+            {saveMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <Save className="h-4 w-4 mr-2" />
+            )}
+            {t('config.saveConfig')}
+          </Button>
+          {isDirty && (
+            <span className="text-xs text-muted-foreground">{t('config.unsavedChanges')}</span>
           )}
-          {t('config.saveConfig')}
-        </Button>
-        {isDirty && (
-          <span className="text-xs text-muted-foreground">{t('config.unsavedChanges')}</span>
+        </div>
+        {statusBanner && (
+          <div
+            className={`px-4 py-3 text-sm border-t ${
+              statusBanner.type === 'success'
+                ? 'bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20'
+                : 'bg-destructive/10 text-destructive border-destructive/20'
+            }`}
+          >
+            {statusBanner.message}
+          </div>
         )}
       </div>
-
-      {/* Status Banner */}
-      {statusBanner && (
-        <div
-          className={`rounded-md px-4 py-3 text-sm ${
-            statusBanner.type === 'success'
-              ? 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20'
-              : 'bg-destructive/10 text-destructive border border-destructive/20'
-          }`}
-        >
-          {statusBanner.message}
-        </div>
-      )}
     </div>
   )
 }
@@ -650,13 +654,13 @@ function RoleCard({
   const defaultForKey = ROLE_DEFAULT_FOR[role]
 
   return (
-    <Card className="border rounded-lg shadow-sm">
-      <CardHeader className="pb-3">
+    <div className="rounded-lg border border-border bg-card overflow-hidden">
+      <div className="px-4 py-3 border-b border-border">
         <div className="flex items-center gap-2">
           {icon}
           <div className="flex-1">
-            <CardTitle className="text-base">{t(`config.${role}`)}</CardTitle>
-            <CardDescription className="text-xs">{t(`config.${role}Subtitle`)}</CardDescription>
+            <h3 className="text-sm font-semibold text-foreground">{t(`config.${role}`)}</h3>
+            <p className="text-xs text-muted-foreground">{t(`config.${role}Subtitle`)}</p>
             {defaultForKey && (
               <Badge variant="outline" className="mt-1 text-[10px] text-muted-foreground">
                 {t('config.defaultFor', { role: t(`config.${defaultForKey}`) })}
@@ -664,8 +668,8 @@ function RoleCard({
             )}
           </div>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
+      </div>
+      <div className="p-4 space-y-4">
         {/* Provider + Model */}
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -760,8 +764,8 @@ function RoleCard({
           form={form}
           onUpdate={onUpdate}
         />
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
 
@@ -805,17 +809,17 @@ function ToolMockerCard({
   }, [savedGuides])
 
   return (
-    <Card className="border rounded-lg shadow-sm">
-      <CardHeader className="pb-3">
+    <div className="rounded-lg border border-border bg-card overflow-hidden">
+      <div className="px-4 py-3 border-b border-border">
         <div className="flex items-center gap-2">
           {ROLE_ICONS.tool_mocker}
           <div className="flex-1">
-            <CardTitle className="text-base">{t('config.toolMocker')}</CardTitle>
-            <CardDescription className="text-xs">{t('config.toolMockerSubtitle')}</CardDescription>
+            <h3 className="text-sm font-semibold text-foreground">{t('config.toolMocker')}</h3>
+            <p className="text-xs text-muted-foreground">{t('config.toolMockerSubtitle')}</p>
           </div>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
+      </div>
+      <div className="p-4 space-y-4">
         {/* Static / LLM Mode Toggle */}
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -895,8 +899,8 @@ function ToolMockerCard({
             {t('config.usingYamlMockMatcher')}
           </p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
 

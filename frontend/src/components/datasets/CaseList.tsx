@@ -121,8 +121,8 @@ export function CaseList({ promptId }: { promptId: string }) {
 
   if (isLoading) {
     return (
-      <div>
-        <div className="flex items-center justify-between mb-4">
+      <div className="rounded-lg border border-border bg-card overflow-hidden">
+        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
           <Skeleton className="h-4 w-[100px]" />
           <div className="flex gap-2">
             <Skeleton className="h-8 w-[70px]" />
@@ -136,31 +136,6 @@ export function CaseList({ promptId }: { promptId: string }) {
 
   return (
     <div>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-sm text-muted-foreground">
-          {t('datasets.testCases', { count: caseList.length })}
-        </p>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setSynthDialogOpen(true)}>
-            <Sparkles className="h-4 w-4 mr-1" />
-            {t('datasets.generateTests')}
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
-            {t('common.import')}
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => {
-              setEditingCase(undefined)
-              setEditorOpen(true)
-            }}
-          >
-            {t('datasets.addCase')}
-          </Button>
-        </div>
-      </div>
-
       {/* Table or Empty State */}
       {caseList.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16">
@@ -181,7 +156,31 @@ export function CaseList({ promptId }: { promptId: string }) {
           </div>
         </div>
       ) : (
-        <div className="rounded-lg border border-border overflow-hidden">
+        <div className="rounded-lg border border-border bg-card overflow-hidden">
+          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-foreground">
+              {t('datasets.testCasesLabel', { defaultValue: 'Test Cases' })}
+              <span className="text-muted-foreground font-normal ml-1">({caseList.length})</span>
+            </h3>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setSynthDialogOpen(true)}>
+                <Sparkles className="h-4 w-4 mr-1" />
+                {t('datasets.generateTests')}
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+                {t('common.import')}
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setEditingCase(undefined)
+                  setEditorOpen(true)
+                }}
+              >
+                {t('datasets.addCase')}
+              </Button>
+            </div>
+          </div>
           <Table>
             <TableHeader>
               <TableRow>

@@ -675,7 +675,7 @@ export function SynthesisDialog({ promptId, open, onOpenChange, onComplete }: Sy
     <>
     {floatingBanner}
     <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) handleClose(); else onOpenChange(true) }}>
-      <DialogContent className={status === 'review' || status === 'submitting' ? 'sm:max-w-4xl' : 'sm:max-w-2xl'}>
+      <DialogContent className={`max-h-[85vh] overflow-y-auto ${status === 'review' || status === 'submitting' ? 'sm:max-w-4xl' : 'sm:max-w-2xl'}`}>
         <DialogHeader>
           <DialogTitle>
             {status === 'review' || status === 'submitting' ? t('datasets.synthesisReviewTitle') : t('datasets.synthesisGenerateTitle')}

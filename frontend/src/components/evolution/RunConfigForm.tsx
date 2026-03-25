@@ -240,9 +240,11 @@ export default function RunConfigForm({ promptId: propPromptId, onRunStarted }: 
         />
 
         {/* Basic Parameters (always visible) */}
-        <Card>
-          <CardContent className="pt-6">
-            <h3 className="text-sm font-medium text-muted-foreground mb-4">{t('evolution.basicParameters')}</h3>
+        <div className="rounded-lg border border-border bg-card overflow-hidden">
+          <div className="px-4 py-3 border-b border-border">
+            <h3 className="text-sm font-semibold text-foreground">{t('evolution.basicParameters')}</h3>
+          </div>
+          <div className="p-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <ParamLabel
@@ -344,62 +346,59 @@ export default function RunConfigForm({ promptId: propPromptId, onRunStarted }: 
                 <p className="text-xs text-muted-foreground mt-1">{t('evolution.incrementalOnlyScratch')}</p>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         {/* Structural Mutation Toggle */}
-        <Card>
-          <CardContent className="pt-6 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <ParamLabel
-                  htmlFor="mutation-toggle"
-                  label={t('evolution.structuralMutation')}
-                  tooltip={t('evolution.structuralMutationTooltip')}
-                />
-              </div>
-              <Switch
-                id="mutation-toggle"
-                checked={mutationEnabled}
-                onCheckedChange={handleMutationToggle}
+        <div className="rounded-lg border border-border bg-card overflow-hidden">
+          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <ParamLabel
+                htmlFor="mutation-toggle"
+                label={t('evolution.structuralMutation')}
+                tooltip={t('evolution.structuralMutationTooltip')}
               />
             </div>
-            {mutationEnabled && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">{t('evolution.probability')}</span>
-                  <span className="font-mono text-foreground">
-                    {Math.round((currentMutationProb ?? 0.2) * 100)}%
-                  </span>
-                </div>
-                <Slider
-                  value={[currentMutationProb ?? 0.2]}
-                  onValueChange={([val]) =>
-                    setConfig((prev) => ({ ...prev, structural_mutation_probability: val }))
-                  }
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  className="w-full"
-                />
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>0%</span>
-                  <span>100%</span>
-                </div>
+            <Switch
+              id="mutation-toggle"
+              checked={mutationEnabled}
+              onCheckedChange={handleMutationToggle}
+            />
+          </div>
+          {mutationEnabled && (
+            <div className="p-4 space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">{t('evolution.probability')}</span>
+                <span className="font-mono text-foreground">
+                  {Math.round((currentMutationProb ?? 0.2) * 100)}%
+                </span>
               </div>
-            )}
-          </CardContent>
-        </Card>
+              <Slider
+                value={[currentMutationProb ?? 0.2]}
+                onValueChange={([val]) =>
+                  setConfig((prev) => ({ ...prev, structural_mutation_probability: val }))
+                }
+                min={0}
+                max={1}
+                step={0.05}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>0%</span>
+                <span>100%</span>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Advanced Evolution Parameters (collapsible, default-closed) */}
-        <Card>
-          <CardContent className="pt-6">
-            <Collapsible defaultOpen={false}>
-              <CollapsibleTrigger className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
-                <ChevronRight className="h-4 w-4 transition-transform duration-200 [[data-state=open]_&]:rotate-90" />
-                {t('evolution.advancedEvolutionParameters')}
-              </CollapsibleTrigger>
-              <CollapsibleContent className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Collapsible defaultOpen={false} className="rounded-lg border border-border bg-card overflow-hidden">
+          <CollapsibleTrigger className="px-4 py-3 border-b border-border flex items-center gap-2 w-full text-left">
+            <ChevronRight className="h-4 w-4 transition-transform duration-200 [[data-state=open]_&]:rotate-90" />
+            <h3 className="text-sm font-semibold text-foreground">{t('evolution.advancedEvolutionParameters')}</h3>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <ParamLabel
                     htmlFor="sel-temperature"
@@ -513,10 +512,9 @@ export default function RunConfigForm({ promptId: propPromptId, onRunStarted }: 
                     placeholder="5"
                   />
                 </div>
-              </CollapsibleContent>
-            </Collapsible>
-          </CardContent>
-        </Card>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
 
         {/* Configure models link */}
         {effectivePromptId && (
