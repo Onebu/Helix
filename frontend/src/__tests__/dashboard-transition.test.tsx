@@ -81,13 +81,9 @@ vi.mock('../components/evolution/Lineage3D', () => ({
   default: () => <div data-testid="lineage-3d">Lineage3D</div>,
 }))
 
-// --- Mock SummaryCards to inspect props ---
+// SummaryCards mock (no longer rendered directly, CompactSummary is used instead)
 vi.mock('../components/evolution/SummaryCards', () => ({
-  default: ({ data }: { data: SummaryData }) => (
-    <div data-testid="summary-cards" data-seed-fitness={data.seedFitness}>
-      SummaryCards
-    </div>
-  ),
+  default: () => null,
 }))
 
 import EvolutionDashboard from '../components/evolution/EvolutionDashboard'
@@ -127,8 +123,7 @@ describe('EvolutionDashboard transition', () => {
 
     renderWithProviders(<EvolutionDashboard runId="test-run-1" />)
 
-    // SummaryCards and FitnessChart should be present
-    expect(screen.getByTestId('summary-cards')).toBeInTheDocument()
+    // Compact summary and FitnessChart should be present
     expect(screen.getByTestId('fitness-chart')).toBeInTheDocument()
 
     // No segmented button group should be rendered (no sub-nav in live view)
@@ -241,10 +236,8 @@ describe('EvolutionDashboard transition', () => {
 
     renderWithProviders(<EvolutionDashboard runId="test-run-3" />)
 
-    // SummaryCards should receive seedFitness derived from seed events
+    // CompactSummary should display seed fitness derived from seed events
     // The best seed fitness is max(-3.5, -2.0) = -2.0
-    const summaryCards = screen.getByTestId('summary-cards')
-    expect(summaryCards).toBeInTheDocument()
-    expect(summaryCards.getAttribute('data-seed-fitness')).toBe('-2')
+    expect(screen.getByText(/Seed:.*-2.00/)).toBeInTheDocument()
   })
 })

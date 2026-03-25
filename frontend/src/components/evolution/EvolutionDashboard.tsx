@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEvolutionSocket } from '../../hooks/useEvolutionSocket'
 import { useRunResults } from '../../hooks/useRunResults'
@@ -61,6 +61,39 @@ function StatusBadge({ status }: { status: EvolutionStatus }) {
   }
 }
 
+function CompactSummary({ data }: { data: SummaryData }) {
+  const { t } = useTranslation()
+  const stopLabel = (() => {
+    const r = data.terminationReason
+    if (!r) return t('evolution.running')
+    const labels: Record<string, string> = {
+      perfect_fitness: t('evolution.perfect'),
+      generations_complete: t('evolution.maxGens'),
+      budget_exhausted: t('evolution.budgetCap'),
+      error: t('common.error'),
+      cancelled: t('evolution.cancelled'),
+    }
+    return labels[r] ?? r.replace(/_/g, ' ')
+  })()
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm">
+      <span className="font-semibold text-foreground">
+        Best: <span className="text-emerald-500 tabular-nums">{data.bestFitness?.toFixed(2) ?? '—'}</span>
+      </span>
+      {data.improvementDelta != null && data.improvementDelta > 0 && (
+        <span className="text-emerald-500 font-medium">+{data.improvementDelta.toFixed(1)} improvement</span>
+      )}
+      <span className="text-muted-foreground">Seed: {data.seedFitness?.toFixed(2) ?? '—'}</span>
+      <span className="text-muted-foreground">
+        {stopLabel}
+      </span>
+      <span className="text-muted-foreground">{data.lineageEventCount} events</span>
+      <span className="text-muted-foreground">${(data.totalCostUsd ?? 0).toFixed(4)}</span>
+    </div>
+  )
+}
+
 function OverviewContent({
   state,
   hyperparameters,
@@ -81,8 +114,8 @@ function OverviewContent({
   const configuredIslands = (hyperparameters?.n_islands as number) || 4
   return (
     <>
-      {/* Summary cards */}
-      <SummaryCards data={state.summary} />
+      {/* Compact summary stats */}
+      <CompactSummary data={state.summary} />
 
       {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-stretch">
@@ -329,64 +362,78 @@ export default function EvolutionDashboard({ runId }: EvolutionDashboardProps) {
     }
   }, [state, historicalSummary, historicalGenerations, historicalCandidates])
 
+  // Compact model summary for sticky bar
+  const modelSummary = modelInfo.targetModel
+    ? `${modelInfo.targetProvider ?? ''}/${modelInfo.targetModel}`.replace(/^\//, '')
+    : null
+  const paramSummary = hyperparameters
+    ? [
+        hyperparameters.generations != null && `${hyperparameters.generations} gen`,
+        hyperparameters.n_islands != null && `${hyperparameters.n_islands} islands`,
+        hyperparameters.budget_cap_usd != null && `$${hyperparameters.budget_cap_usd} budget`,
+      ].filter(Boolean).join(' · ')
+    : null
+
   return (
-    <div className="space-y-6">
-      {/* Header: status + accept */}
-      <div className="flex items-center gap-3">
-        <StatusBadge status={displayStatus} />
-        <div className="ml-auto flex items-center gap-2">
-          {acceptError && (
-            <span className="text-red-400 text-xs">{acceptError}</span>
-          )}
-          {acceptedVersion !== null && (
-            <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs">
-              v{acceptedVersion} accepted
-            </Badge>
-          )}
-          {canAccept && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="border-emerald-600 text-emerald-400 hover:bg-emerald-600 hover:text-white text-xs"
-              onClick={() => acceptMutation.mutate(results!.bestTemplate!)}
-              disabled={acceptMutation.isPending}
-            >
-              {acceptMutation.isPending ? 'Accepting...' : 'Accept as New Version'}
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Models + params on separate line, expandable detail below */}
-      {(hyperparameters || modelInfo.metaModel) && (
-        <HyperparameterDisplay hyperparameters={hyperparameters ?? {}} modelInfo={modelInfo} />
-      )}
-
-      {/* Sub-navigation */}
+    <div className="space-y-4">
+      {/* Compact sticky bar: status + model + tabs + CTA */}
       {isComplete ? (
         <div>
-          <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 pb-4">
-            <div className="flex items-center gap-1 border-b border-border" role="tablist" aria-label="Evolution results">
-              {[
-                { value: 'overview', label: 'Overview' },
-                { value: 'winning-path', label: 'Winning Path' },
-              ].map((tab) => (
-                <button
-                  key={tab.value}
-                  role="tab"
-                  aria-selected={activeTab === tab.value}
-                  aria-controls={`panel-${tab.value}`}
-                  onClick={() => setActiveTab(tab.value)}
-                  className={cn(
-                    'px-4 py-2.5 text-sm font-medium transition-colors -mb-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-t-md',
-                    activeTab === tab.value
-                      ? 'border border-border border-b-background bg-card text-foreground'
-                      : 'border border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                  )}
-                >
-                  {tab.label}
-                </button>
-              ))}
+          <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+            <div className="flex items-center gap-3 border-b border-border py-2">
+              {/* Left: status + run context */}
+              <StatusBadge status={displayStatus} />
+              {modelSummary && (
+                <span className="text-xs text-muted-foreground font-mono hidden sm:inline">{modelSummary}</span>
+              )}
+              {paramSummary && (
+                <span className="text-xs text-muted-foreground hidden md:inline">· {paramSummary}</span>
+              )}
+
+              {/* Center: tabs */}
+              <div className="flex items-center gap-1 ml-4" role="tablist" aria-label="Evolution results">
+                {[
+                  { value: 'overview', label: 'Overview' },
+                  { value: 'winning-path', label: 'Winning Path' },
+                ].map((tab) => (
+                  <button
+                    key={tab.value}
+                    role="tab"
+                    aria-selected={activeTab === tab.value}
+                    aria-controls={`panel-${tab.value}`}
+                    onClick={() => setActiveTab(tab.value)}
+                    className={cn(
+                      'px-3 py-1.5 text-sm font-medium transition-colors rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                      activeTab === tab.value
+                        ? 'bg-secondary text-foreground'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                    )}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Right: CTA */}
+              <div className="ml-auto flex items-center gap-2">
+                {acceptError && (
+                  <span className="text-red-400 text-xs">{acceptError}</span>
+                )}
+                {acceptedVersion !== null && (
+                  <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs">
+                    v{acceptedVersion}
+                  </Badge>
+                )}
+                {canAccept && (
+                  <Button
+                    size="sm"
+                    onClick={() => acceptMutation.mutate(results!.bestTemplate!)}
+                    disabled={acceptMutation.isPending}
+                  >
+                    {acceptMutation.isPending ? 'Accepting...' : 'Accept as New Version'}
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -414,7 +461,13 @@ export default function EvolutionDashboard({ runId }: EvolutionDashboardProps) {
           )}
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <StatusBadge status={displayStatus} />
+            {modelSummary && (
+              <span className="text-xs text-muted-foreground font-mono">{modelSummary}</span>
+            )}
+          </div>
           <OverviewContent state={effectiveState} hyperparameters={hyperparameters as Record<string, unknown> | null} />
         </div>
       )}
