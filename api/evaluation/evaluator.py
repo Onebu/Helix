@@ -24,6 +24,9 @@ from api.evaluation.scorers import BehaviorJudgeScorer, ExactMatchScorer
 from api.exceptions import GatewayError, RetryableError
 from api.gateway.cost import CostTracker
 from api.gateway.protocol import LLMProvider
+from api.registry.llm_mocker import LLMMocker
+from api.registry.schemas import MockDefinition
+from api.registry.tool_resolver import normalize_tool_call, resolve_tool_call
 from api.types import ModelRole
 
 logger = logging.getLogger(__name__)
@@ -68,6 +71,10 @@ class FitnessEvaluator:
         aggregator: FitnessAggregator,
         cost_tracker: CostTracker,
         extra_inference_kwargs: dict | None = None,
+        mocks: list[MockDefinition] | None = None,
+        llm_mocker: LLMMocker | None = None,
+        format_guides: dict[str, list[str]] | None = None,
+        max_tool_steps: int = 10,
     ) -> None:
         self._client = client
         self._renderer = renderer
@@ -76,6 +83,10 @@ class FitnessEvaluator:
         self._aggregator = aggregator
         self._cost_tracker = cost_tracker
         self._extra_inference_kwargs = extra_inference_kwargs
+        self._mocks = mocks
+        self._llm_mocker = llm_mocker
+        self._format_guides = format_guides or {}
+        self._max_tool_steps = max_tool_steps
 
     async def evaluate(
         self,
@@ -205,8 +216,44 @@ class FitnessEvaluator:
                 synthetic="synthetic" in (case.tags or []),
             )
 
-        # Step 5: Track cost
+        # Step 5: Track cost (initial call)
         self._cost_tracker.record(response)
+
+        # Step 5b: Agentic tool loop — execute tool calls via mocks until stop
+        if self._mocks is not None or self._llm_mocker is not None:
+            tool_step = 0
+            while response.tool_calls and tool_step < self._max_tool_steps:
+                tool_step += 1
+
+                messages.append({
+                    "role": "assistant",
+                    "content": response.content or "",
+                    "tool_calls": response.tool_calls,
+                })
+
+                for tc in response.tool_calls:
+                    normalized = normalize_tool_call(tc)
+                    result_content = await resolve_tool_call(
+                        normalized["name"],
+                        normalized["arguments"] if isinstance(normalized["arguments"], dict) else {},
+                        mocks=self._mocks,
+                        llm_mocker=self._llm_mocker,
+                        format_guides=self._format_guides if self._format_guides else None,
+                    )
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.get("id", ""),
+                        "content": result_content,
+                    })
+
+                inference_kwargs["messages"] = messages
+                try:
+                    response = await self._client.chat_completion(**inference_kwargs)
+                except (GatewayError, RetryableError) as exc:
+                    logger.warning("API error during tool loop for case %s: %s", case.id, exc)
+                    break
+
+                self._cost_tracker.record(response)
 
         # Step 6: Score with appropriate scorer (4-way routing)
         expected = case.expected_output or {}
