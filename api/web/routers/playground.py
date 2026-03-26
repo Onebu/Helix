@@ -339,7 +339,7 @@ async def _sse_generator(
 
             # Stream text content as tokens
             if message.content:
-                yield _sse_event("token", {"content": message.content})
+                yield _sse_event("token", {"content": message.content, "step": step})
 
             # Check for tool calls — only enter loop if model actually called tools
             if not message.tool_calls:
@@ -362,6 +362,7 @@ async def _sse_generator(
                     "id": tool_call_id,
                     "name": normalized["name"],
                     "arguments": normalized["arguments"],
+                    "step": step,
                 })
 
                 # Resolve mock (if mocks are configured)
@@ -378,6 +379,7 @@ async def _sse_generator(
                     "tool_call_id": tool_call_id,
                     "name": normalized["name"],
                     "content": result_content,
+                    "step": step,
                 })
 
                 messages.append({

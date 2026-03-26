@@ -35,58 +35,100 @@ function renderTemplate(template: string, variables: Record<string, string>): st
   })
 }
 
-function MessageBubble({ message, isStreaming }: { message: ChatMessage; isStreaming: boolean }) {
-  if (message.role === 'tool_call' && message.toolCall) {
-    const args = message.toolCall.arguments
-    const hasArgs = Object.keys(args).length > 0
+function ToolCallBlock({ message }: { message: ChatMessage }) {
+  const tc = message.toolCall!
+  const args = tc.arguments
+  const hasArgs = Object.keys(args).length > 0
+  return (
+    <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-mono">
+      <div className="flex items-center gap-1.5 text-amber-400 mb-1">
+        <span className="text-[10px] font-semibold uppercase tracking-wider">Tool Call</span>
+      </div>
+      <div className="text-foreground font-semibold">{tc.name}()</div>
+      {hasArgs && (
+        <pre className="mt-1 text-muted-foreground text-[11px] overflow-x-auto">
+          {JSON.stringify(args, null, 2)}
+        </pre>
+      )}
+    </div>
+  )
+}
+
+function ToolResultBlock({ message }: { message: ChatMessage }) {
+  const tr = message.toolResult!
+  return (
+    <div className="rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-xs font-mono">
+      <div className="flex items-center gap-1.5 text-blue-400 mb-1">
+        <span className="text-[10px] font-semibold uppercase tracking-wider">Tool Result</span>
+        <span className="text-muted-foreground">{tr.name}</span>
+      </div>
+      <pre className="text-foreground text-[11px] overflow-x-auto whitespace-pre-wrap">
+        {tr.content}
+      </pre>
+    </div>
+  )
+}
+
+function groupMessagesByStep(messages: ChatMessage[]): ChatMessage[][] {
+  const groups: ChatMessage[][] = []
+  let current: ChatMessage[] = []
+
+  for (const msg of messages) {
+    if (msg.role === 'user') {
+      if (current.length > 0) groups.push(current)
+      groups.push([msg])
+      current = []
+    } else if (
+      current.length > 0 &&
+      msg.step !== undefined &&
+      current[0].step !== undefined &&
+      msg.step !== current[0].step
+    ) {
+      // New step — start new group
+      groups.push(current)
+      current = [msg]
+    } else {
+      current.push(msg)
+    }
+  }
+  if (current.length > 0) groups.push(current)
+  return groups
+}
+
+function MessageGroup({ messages, isStreaming }: { messages: ChatMessage[]; isStreaming: boolean }) {
+  if (messages.length === 1 && messages[0].role === 'user') {
     return (
-      <div className="flex justify-start mb-2">
-        <div className="max-w-[80%] rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-mono">
-          <div className="flex items-center gap-1.5 text-amber-400 mb-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wider">Tool Call</span>
-          </div>
-          <div className="text-foreground font-semibold">{message.toolCall.name}()</div>
-          {hasArgs && (
-            <pre className="mt-1 text-muted-foreground text-[11px] overflow-x-auto">
-              {JSON.stringify(args, null, 2)}
-            </pre>
-          )}
+      <div className="flex justify-end mb-3">
+        <div className="max-w-[80%] rounded-lg px-4 py-2.5 text-sm whitespace-pre-wrap bg-primary text-primary-foreground">
+          {messages[0].content}
         </div>
       </div>
     )
   }
 
-  if (message.role === 'tool_result' && message.toolResult) {
-    return (
-      <div className="flex justify-start mb-2">
-        <div className="max-w-[80%] rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-xs font-mono">
-          <div className="flex items-center gap-1.5 text-blue-400 mb-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wider">Tool Result</span>
-            <span className="text-muted-foreground">{message.toolResult.name}</span>
-          </div>
-          <pre className="text-foreground text-[11px] overflow-x-auto whitespace-pre-wrap">
-            {message.toolResult.content}
-          </pre>
-        </div>
-      </div>
-    )
-  }
-
-  const isUser = message.role === 'user'
+  // Group of assistant + tool messages from the same step
+  const hasToolCalls = messages.some((m) => m.role === 'tool_call')
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3`}>
-      <div
-        className={`max-w-[80%] rounded-lg px-4 py-2.5 text-sm whitespace-pre-wrap ${
-          isUser
-            ? 'bg-primary text-primary-foreground'
-            : 'bg-muted text-foreground'
-        }`}
-      >
-        {message.content}
-        {isStreaming && !isUser && (
-          <span className="inline-block w-2 h-4 ml-0.5 bg-foreground/60 animate-pulse" />
-        )}
+    <div className="flex justify-start mb-3">
+      <div className={`max-w-[80%] space-y-1.5 ${hasToolCalls ? 'rounded-lg border border-border/50 bg-muted/30 p-2.5' : ''}`}>
+        {messages.map((msg, i) => {
+          if (msg.role === 'tool_call' && msg.toolCall) {
+            return <ToolCallBlock key={i} message={msg} />
+          }
+          if (msg.role === 'tool_result' && msg.toolResult) {
+            return <ToolResultBlock key={i} message={msg} />
+          }
+          // Assistant text
+          return (
+            <div key={i} className={`rounded-lg px-4 py-2.5 text-sm whitespace-pre-wrap ${hasToolCalls ? '' : 'bg-muted'} text-foreground`}>
+              {msg.content}
+              {isStreaming && i === messages.length - 1 && (
+                <span className="inline-block w-2 h-4 ml-0.5 bg-foreground/60 animate-pulse" />
+              )}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -411,11 +453,11 @@ export default function PromptPlaygroundPage() {
               {t('playground.emptyChat')}
             </div>
           )}
-          {chat.messages.map((msg: ChatMessage, i: number) => (
-            <MessageBubble
+          {groupMessagesByStep(chat.messages).map((group, i, allGroups) => (
+            <MessageGroup
               key={i}
-              message={msg}
-              isStreaming={chat.isStreaming && i === chat.messages.length - 1}
+              messages={group}
+              isStreaming={chat.isStreaming && i === allGroups.length - 1}
             />
           ))}
           <div ref={messagesEndRef} />

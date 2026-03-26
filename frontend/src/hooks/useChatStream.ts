@@ -18,6 +18,7 @@ export interface ChatMessage {
   content: string
   toolCall?: ToolCallData
   toolResult?: ToolResultData
+  step?: number
 }
 
 export interface ChatUsage {
@@ -186,17 +187,17 @@ export function useChatStream(promptId: string) {
             switch (evt.event) {
               case 'token': {
                 const tokenContent = parsed.content as string
+                const tokenStep = parsed.step as number | undefined
                 setState((prev) => {
                   const msgs = [...prev.messages]
                   const last = msgs[msgs.length - 1]
-                  if (last && last.role === 'assistant') {
+                  if (last && last.role === 'assistant' && last.step === tokenStep) {
                     msgs[msgs.length - 1] = {
                       ...last,
                       content: last.content + tokenContent,
                     }
                   } else {
-                    // After tool_call/tool_result, start a new assistant message
-                    msgs.push({ role: 'assistant', content: tokenContent })
+                    msgs.push({ role: 'assistant', content: tokenContent, step: tokenStep })
                   }
                   return { ...prev, messages: msgs }
                 })
@@ -217,6 +218,7 @@ export function useChatStream(promptId: string) {
                       role: 'tool_call' as const,
                       content: toolCall.name,
                       toolCall,
+                      step: parsed.step as number | undefined,
                     },
                   ],
                 }))
@@ -237,6 +239,7 @@ export function useChatStream(promptId: string) {
                       role: 'tool_result' as const,
                       content: toolResult.content,
                       toolResult,
+                      step: parsed.step as number | undefined,
                     },
                   ],
                 }))
