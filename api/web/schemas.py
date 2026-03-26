@@ -192,6 +192,12 @@ class UpdateTemplateRequest(BaseModel):
     template: str
 
 
+class UpdateMocksRequest(BaseModel):
+    """Request body for updating a prompt's mock definitions."""
+
+    mocks: list[dict]
+
+
 class ExtractVariablesRequest(BaseModel):
     """Request body for extracting variables from a template."""
 

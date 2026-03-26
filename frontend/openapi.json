@@ -319,6 +319,104 @@
         }
       }
     },
+    "/api/prompts/{prompt_id}/mocks": {
+      "put": {
+        "tags": [
+          "prompts"
+        ],
+        "summary": "Update Mocks",
+        "description": "Update mock definitions for a prompt.\n\nEach mock has tool_name + scenarios with match_args and response.",
+        "operationId": "update_mocks_api_prompts__prompt_id__mocks_put",
+        "parameters": [
+          {
+            "name": "prompt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Prompt Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMocksRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Update Mocks Api Prompts  Prompt Id  Mocks Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "prompts"
+        ],
+        "summary": "Get Mocks",
+        "description": "Get mock definitions for a prompt.",
+        "operationId": "get_mocks_api_prompts__prompt_id__mocks_get",
+        "parameters": [
+          {
+            "name": "prompt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Prompt Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Mocks Api Prompts  Prompt Id  Mocks Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/prompts/{prompt_id}/versions": {
       "get": {
         "tags": [
@@ -2250,7 +2348,7 @@
           "playground"
         ],
         "summary": "Chat",
-        "description": "Stream an LLM chat response via Server-Sent Events.\n\nLoads the prompt template from DB, renders it with provided variables as the\nsystem message, appends the conversation history, and streams the\ntarget model's response token-by-token.\n\nSSE events emitted:\n- token: {\"content\": \"...\"} -- each streamed token\n- done: {\"input_tokens\": N, \"output_tokens\": N, \"cost_usd\": F, \"model\": \"...\", \"finish_reason\": \"...\"} -- stream complete\n- error: {\"message\": \"...\"} -- on failure\n- limit_reached: {\"reason\": \"turn_limit\", \"turns_used\": N, \"turn_limit\": N} -- turn limit exceeded",
+        "description": "Stream an LLM chat response via Server-Sent Events.\n\nLoads the prompt template from DB, renders it with provided variables as the\nsystem message, appends the conversation history, and streams the\ntarget model's response token-by-token.\n\nSupports agentic tool calling: when tools and mocks are configured on the\nprompt, tool calls are resolved via MockMatcher and the model is called again\nuntil finish_reason=stop or max_steps is reached.\n\nSSE events emitted:\n- token: {\"content\": \"...\"} -- each streamed token\n- tool_call: {\"id\": \"...\", \"name\": \"...\", \"arguments\": {...}} -- model called a tool\n- tool_result: {\"tool_call_id\": \"...\", \"name\": \"...\", \"content\": \"...\"} -- mock response\n- done: {\"input_tokens\": N, \"output_tokens\": N, \"cost_usd\": F, \"model\": \"...\",\n         \"finish_reason\": \"...\", \"steps\": N} -- stream complete\n- error: {\"message\": \"...\"} -- on failure\n- limit_reached: {\"reason\": \"turn_limit\", \"turns_used\": N, \"turn_limit\": N}",
         "operationId": "chat_api_prompts__prompt_id__chat_post",
         "parameters": [
           {
@@ -2656,6 +2754,17 @@
             "type": "number",
             "title": "Cost Budget",
             "default": 0.5
+          },
+          "max_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Steps"
           }
         },
         "type": "object",
@@ -5402,6 +5511,24 @@
         ],
         "title": "ToolMockerConfigResponse",
         "description": "Configuration for the Tool Mocker role (static YAML or LLM-based)."
+      },
+      "UpdateMocksRequest": {
+        "properties": {
+          "mocks": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Mocks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mocks"
+        ],
+        "title": "UpdateMocksRequest",
+        "description": "Request body for updating a prompt's mock definitions."
       },
       "UpdatePersonaRequest": {
         "properties": {

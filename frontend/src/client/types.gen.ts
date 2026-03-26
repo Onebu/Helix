@@ -102,6 +102,10 @@ export type ChatRequest = {
      * Cost Budget
      */
     cost_budget?: number;
+    /**
+     * Max Steps
+     */
+    max_steps?: number | null;
 };
 
 /**
@@ -1639,6 +1643,20 @@ export type ToolMockerConfigResponse = {
 };
 
 /**
+ * UpdateMocksRequest
+ *
+ * Request body for updating a prompt's mock definitions.
+ */
+export type UpdateMocksRequest = {
+    /**
+     * Mocks
+     */
+    mocks: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+/**
  * UpdatePersonaRequest
  *
  * Request body for updating a persona. All fields optional for partial update.
@@ -2035,6 +2053,74 @@ export type UpdateTemplateApiPromptsPromptIdTemplatePutResponses = {
 };
 
 export type UpdateTemplateApiPromptsPromptIdTemplatePutResponse = UpdateTemplateApiPromptsPromptIdTemplatePutResponses[keyof UpdateTemplateApiPromptsPromptIdTemplatePutResponses];
+
+export type GetMocksApiPromptsPromptIdMocksGetData = {
+    body?: never;
+    path: {
+        /**
+         * Prompt Id
+         */
+        prompt_id: string;
+    };
+    query?: never;
+    url: '/api/prompts/{prompt_id}/mocks';
+};
+
+export type GetMocksApiPromptsPromptIdMocksGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetMocksApiPromptsPromptIdMocksGetError = GetMocksApiPromptsPromptIdMocksGetErrors[keyof GetMocksApiPromptsPromptIdMocksGetErrors];
+
+export type GetMocksApiPromptsPromptIdMocksGetResponses = {
+    /**
+     * Response Get Mocks Api Prompts  Prompt Id  Mocks Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type GetMocksApiPromptsPromptIdMocksGetResponse = GetMocksApiPromptsPromptIdMocksGetResponses[keyof GetMocksApiPromptsPromptIdMocksGetResponses];
+
+export type UpdateMocksApiPromptsPromptIdMocksPutData = {
+    body: UpdateMocksRequest;
+    path: {
+        /**
+         * Prompt Id
+         */
+        prompt_id: string;
+    };
+    query?: never;
+    url: '/api/prompts/{prompt_id}/mocks';
+};
+
+export type UpdateMocksApiPromptsPromptIdMocksPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateMocksApiPromptsPromptIdMocksPutError = UpdateMocksApiPromptsPromptIdMocksPutErrors[keyof UpdateMocksApiPromptsPromptIdMocksPutErrors];
+
+export type UpdateMocksApiPromptsPromptIdMocksPutResponses = {
+    /**
+     * Response Update Mocks Api Prompts  Prompt Id  Mocks Put
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type UpdateMocksApiPromptsPromptIdMocksPutResponse = UpdateMocksApiPromptsPromptIdMocksPutResponses[keyof UpdateMocksApiPromptsPromptIdMocksPutResponses];
 
 export type ListVersionsApiPromptsPromptIdVersionsGetData = {
     body?: never;

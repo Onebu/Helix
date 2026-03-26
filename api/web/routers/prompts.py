@@ -36,6 +36,7 @@ from api.web.schemas import (
     PromptVersionResponse,
     RoleConfigResponse,
     ToolMockerConfigResponse,
+    UpdateMocksRequest,
     UpdateTemplateRequest,
 )
 
@@ -337,6 +338,44 @@ async def update_template(
     """Update a prompt's template text."""
     record = await registry.update_template(prompt_id, body.template, "Update via API")
     return _record_to_summary(record)
+
+
+@router.put("/{prompt_id}/mocks")
+async def update_mocks(
+    prompt_id: str,
+    body: UpdateMocksRequest,
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Update mock definitions for a prompt.
+
+    Each mock has tool_name + scenarios with match_args and response.
+    """
+    result = await session.execute(
+        select(PromptModel).where(PromptModel.id == prompt_id)
+    )
+    prompt_row = result.scalar_one_or_none()
+    if not prompt_row:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+
+    prompt_row.mocks = body.mocks
+    await session.commit()
+    return {"status": "ok", "mock_count": len(body.mocks)}
+
+
+@router.get("/{prompt_id}/mocks")
+async def get_mocks(
+    prompt_id: str,
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Get mock definitions for a prompt."""
+    result = await session.execute(
+        select(PromptModel).where(PromptModel.id == prompt_id)
+    )
+    prompt_row = result.scalar_one_or_none()
+    if not prompt_row:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+
+    return {"mocks": prompt_row.mocks or []}
 
 
 # --- Version endpoints (Phase 63) ---

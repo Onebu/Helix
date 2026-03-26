@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select'
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
 import ModelRoleSelector from '@/components/evolution/ModelRoleSelector'
+import { MockEditor } from '@/components/prompts/MockEditor'
 import ThinkingBudgetControl from '@/components/evolution/ThinkingBudgetControl'
 import { getApiBaseUrl } from '@/lib/api-config'
 
@@ -895,9 +896,12 @@ function ToolMockerCard({
             </div>
           </>
         ) : (
-          <p className="text-xs text-muted-foreground py-2">
-            {t('config.usingYamlMockMatcher')}
-          </p>
+          <div className="border-t pt-4">
+            <h4 className="text-sm font-medium text-foreground mb-3">
+              {t('config.staticMocks')}
+            </h4>
+            <MockEditor promptId={promptId} toolNames={toolNames} />
+          </div>
         )}
       </div>
     </div>
