@@ -23,6 +23,52 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_TOOL_STEPS = 10
 
 
+async def load_tool_mocker_config(
+    session: Any,
+    prompt_id: str,
+    config: Any,
+) -> tuple["LLMMocker | None", dict[str, list[str]], int]:
+    """Load LLM mocker config, format guides, and max_tool_steps from DB.
+
+    Returns (llm_mocker, format_guides, max_tool_steps).
+    """
+    from sqlalchemy import select
+
+    from api.gateway.factory import create_provider
+    from api.storage.models import PromptConfig, ToolFormatGuide
+
+    llm_mocker_instance: LLMMocker | None = None
+    format_guides: dict[str, list[str]] = {}
+    max_tool_steps = DEFAULT_MAX_TOOL_STEPS
+
+    result = await session.execute(
+        select(PromptConfig).where(PromptConfig.prompt_id == prompt_id)
+    )
+    config_row = result.scalar_one_or_none()
+
+    if config_row and config_row.extra:
+        tool_mocker_mode = config_row.extra.get("tool_mocker_mode", "static") or "static"
+        tool_mocker_provider = config_row.extra.get("tool_mocker_provider")
+        tool_mocker_model = config_row.extra.get("tool_mocker_model")
+        max_tool_steps = config_row.extra.get("max_tool_steps", DEFAULT_MAX_TOOL_STEPS) or DEFAULT_MAX_TOOL_STEPS
+
+        if tool_mocker_mode == "llm" and tool_mocker_provider and tool_mocker_model:
+            fg_result = await session.execute(
+                select(ToolFormatGuide).where(ToolFormatGuide.prompt_id == prompt_id)
+            )
+            for row in fg_result.scalars().all():
+                format_guides[row.tool_name] = row.examples
+
+            if format_guides:
+                try:
+                    mocker_provider = create_provider(tool_mocker_provider, config)
+                    llm_mocker_instance = LLMMocker(mocker_provider, tool_mocker_model)
+                except Exception as exc:
+                    logger.warning("Failed to create LLM mocker: %s", exc)
+
+    return llm_mocker_instance, format_guides, max_tool_steps
+
+
 def normalize_tool_call(tc: dict[str, Any]) -> dict[str, Any]:
     """Extract name and arguments from a tool call dict (various formats)."""
     if "function" in tc:

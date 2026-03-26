@@ -15,6 +15,7 @@ from typing import Any
 
 from api.evaluation.models import CaseResult
 from api.gateway.protocol import LLMProvider
+from api.registry.tool_resolver import normalize_tool_call
 from api.types import LLMResponse, ModelRole
 
 logger = logging.getLogger(__name__)
@@ -44,43 +45,6 @@ _LANGUAGE_NAMES: dict[str, str] = {
 }
 
 
-def _normalize_tool_call(call: dict[str, Any]) -> dict[str, Any]:
-    """Normalize a tool call dict to flat ``{name, arguments}`` format.
-
-    Handles both formats transparently:
-
-    Flat (test fixtures / some datasets)::
-
-        {"name": "get_weather", "arguments": {"city": "London"}}
-
-    Nested (real OpenAI / Gemini / OpenRouter API responses)::
-
-        {"id": "call_abc", "type": "function",
-         "function": {"name": "get_weather", "arguments": "{\\"city\\": \\"London\\"}"}}
-
-    If ``arguments`` is a JSON string it is parsed to a dict.  If parsing
-    fails the raw string is kept (``_normalize_args`` will handle it later).
-
-    Returns:
-        A flat dict with ``name`` and ``arguments`` keys.
-    """
-    # Nested format: extract from "function" wrapper
-    if "function" in call and isinstance(call["function"], dict):
-        func = call["function"]
-        name = func.get("name", "")
-        arguments = func.get("arguments", {})
-    else:
-        name = call.get("name", "")
-        arguments = call.get("arguments", {})
-
-    # Parse JSON-string arguments (Gemini / OpenAI return these)
-    if isinstance(arguments, str):
-        try:
-            arguments = json.loads(arguments)
-        except (json.JSONDecodeError, TypeError):
-            pass  # Keep raw string; _normalize_args handles it downstream
-
-    return {"name": name, "arguments": arguments}
 
 
 class ExactMatchScorer:
@@ -168,8 +132,8 @@ class ExactMatchScorer:
             )
 
         # Normalize all tool calls to flat {name, arguments} format
-        expected_tools = [_normalize_tool_call(tc) for tc in expected_tools]
-        actual_tools = [_normalize_tool_call(tc) for tc in actual_tools]
+        expected_tools = [normalize_tool_call(tc) for tc in expected_tools]
+        actual_tools = [normalize_tool_call(tc) for tc in actual_tools]
 
         # Compare tool calls in order
         all_names_match = True

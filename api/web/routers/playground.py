@@ -37,7 +37,7 @@ from api.registry.llm_mocker import LLMMocker
 from api.registry.schemas import MockDefinition
 from api.registry.service import PromptRegistry
 from api.registry.tool_resolver import DEFAULT_MAX_TOOL_STEPS, normalize_tool_call, resolve_tool_call
-from api.storage.models import PlaygroundVariable, PromptConfig, ToolFormatGuide
+from api.storage.models import PlaygroundVariable, PromptConfig
 from api.web.deps import get_config, get_db_session, get_registry
 from api.web.schemas import (
     ChatRequest,
@@ -233,34 +233,12 @@ async def chat(
     # Collect tools and mocks from the prompt record
     tools = record.tools if record.tools else None
     mocks = record.mocks if record.mocks else None
-    # Read max_tool_steps from prompt config (Config tab), fall back to default
-    max_steps = DEFAULT_MAX_TOOL_STEPS
-    if config_row and config_row.extra:
-        max_steps = config_row.extra.get("max_tool_steps", DEFAULT_MAX_TOOL_STEPS) or DEFAULT_MAX_TOOL_STEPS
 
-    # Load LLM mocker config and format guides from DB
-    llm_mocker = None
-    format_guides: dict[str, list[str]] = {}
-
-    if config_row and config_row.extra:
-        tool_mocker_mode = config_row.extra.get("tool_mocker_mode", "static") or "static"
-        tool_mocker_provider = config_row.extra.get("tool_mocker_provider")
-        tool_mocker_model = config_row.extra.get("tool_mocker_model")
-
-        if tool_mocker_mode == "llm" and tool_mocker_provider and tool_mocker_model:
-            # Load format guides
-            fg_result = await session.execute(
-                select(ToolFormatGuide).where(ToolFormatGuide.prompt_id == prompt_id)
-            )
-            for row in fg_result.scalars().all():
-                format_guides[row.tool_name] = row.examples
-
-            if format_guides:
-                try:
-                    mocker_provider = create_provider(tool_mocker_provider, merged_config)
-                    llm_mocker = LLMMocker(mocker_provider, tool_mocker_model)
-                except Exception as exc:
-                    logger.warning("Failed to create LLM mocker: %s", exc)
+    # Load LLM mocker config, format guides, and max_tool_steps from DB
+    from api.registry.tool_resolver import load_tool_mocker_config
+    llm_mocker, format_guides, max_steps = await load_tool_mocker_config(
+        session, prompt_id, merged_config,
+    )
 
     return StreamingResponse(
         _sse_generator(
@@ -330,17 +308,18 @@ async def _sse_generator(
     step = 0
 
     try:
+        # Agentic tool loop: non-streaming for intermediate steps (need tool_calls),
+        # streaming for the final step (real-time token delivery).
         while step < max_steps:
             step += 1
 
-            # Use non-streaming call to capture full response including tool_calls
+            # Non-streaming call to detect tool_calls in the response
             response = await provider._client.chat.completions.create(
                 model=target_model,
                 messages=messages,
                 **base_kwargs,
             )
 
-            # Extract usage
             if response.usage:
                 total_input_tokens += response.usage.prompt_tokens or 0
                 total_output_tokens += response.usage.completion_tokens or 0
@@ -349,15 +328,16 @@ async def _sse_generator(
             finish_reason = choice.finish_reason or "stop"
             message = choice.message
 
-            # Stream text content as tokens
+            # No tool calls — this is the final step
+            if not message.tool_calls:
+                if message.content:
+                    yield _sse_event("token", {"content": message.content, "step": step})
+                break
+
+            # Intermediate step: emit text + resolve tool calls
             if message.content:
                 yield _sse_event("token", {"content": message.content, "step": step})
 
-            # Check for tool calls — only enter loop if model actually called tools
-            if not message.tool_calls:
-                break
-
-            # Emit tool_call events and resolve via MockMatcher
             assistant_msg: dict[str, Any] = {
                 "role": "assistant",
                 "content": message.content or "",
@@ -398,9 +378,33 @@ async def _sse_generator(
                     "content": result_content,
                 })
 
-            # Loop continues — next iteration calls LLM with tool results
+        # Now stream the final response for real-time token delivery
+        # Only if the last response had tool_calls (meaning we need one more call)
+        # If we broke out of the loop above with no tool_calls, we already emitted content
+        if step >= max_steps and finish_reason != "stop":
+            # Hit max steps — do one final streaming call
+            step += 1
+            stream_kwargs = {**base_kwargs, "stream": True, "stream_options": {"include_usage": True}}
+            stream_kwargs.pop("tools", None)  # No tools on final call to force text response
 
-        # Compute cost
+            stream = await provider._client.chat.completions.create(
+                model=target_model,
+                messages=messages,
+                **stream_kwargs,
+            )
+
+            async for chunk in stream:
+                if chunk.usage is not None:
+                    total_input_tokens += chunk.usage.prompt_tokens or 0
+                    total_output_tokens += chunk.usage.completion_tokens or 0
+                if chunk.choices:
+                    choice = chunk.choices[0]
+                    if choice.finish_reason is not None:
+                        finish_reason = choice.finish_reason
+                    delta = choice.delta
+                    if delta and delta.content is not None:
+                        yield _sse_event("token", {"content": delta.content, "step": step})
+
         cost_usd = estimate_cost_from_tokens(target_model, total_input_tokens, total_output_tokens)
 
         yield _sse_event(

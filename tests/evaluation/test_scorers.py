@@ -443,9 +443,9 @@ class TestNormalizeToolCall:
     """Direct unit tests for the _normalize_tool_call helper function."""
 
     def setup_method(self):
-        from api.evaluation.scorers import _normalize_tool_call
+        from api.registry.tool_resolver import normalize_tool_call
 
-        self.normalize = _normalize_tool_call
+        self.normalize = normalize_tool_call
 
     def test_flat_format_passthrough(self):
         """Flat format passes through unchanged."""
@@ -473,10 +473,10 @@ class TestNormalizeToolCall:
         result = self.normalize({"function": {"name": "fn", "arguments": '{"a": 1}'}})
         assert result == {"name": "fn", "arguments": {"a": 1}}
 
-    def test_invalid_json_string_kept_as_is(self):
-        """Invalid JSON string arguments are kept as-is."""
+    def test_invalid_json_string_returns_empty_dict(self):
+        """Invalid JSON string arguments are normalized to empty dict."""
         result = self.normalize({"name": "fn", "arguments": "not-json"})
-        assert result == {"name": "fn", "arguments": "not-json"}
+        assert result == {"name": "fn", "arguments": {}}
 
     def test_empty_arguments_dict(self):
         """Empty arguments dict passes through."""

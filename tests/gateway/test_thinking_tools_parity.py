@@ -12,7 +12,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from api.evaluation.scorers import _BEHAVIOR_JUDGE_SCHEMA, _normalize_tool_call
+from api.evaluation.scorers import _BEHAVIOR_JUDGE_SCHEMA
+from api.registry.tool_resolver import normalize_tool_call as _normalize_tool_call
 from api.gateway.litellm_provider import LiteLLMProvider
 from api.types import ModelRole
 

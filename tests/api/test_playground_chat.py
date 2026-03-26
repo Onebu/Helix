@@ -319,3 +319,114 @@ class TestAgenticToolLoop:
 
         done = next(e for e in events if e["event"] == "done")
         assert done["data"]["steps"] == 1
+
+    async def test_multi_step_chained_tool_calls(self, client: httpx.AsyncClient):
+        """Model chains 3 tool calls across 3 steps before returning text."""
+        await client.post(
+            "/api/prompts/",
+            json={
+                "id": "chain-prompt",
+                "purpose": "Test chained tool calls",
+                "template": "You are an assistant.",
+                "tools": [
+                    {"type": "function", "function": {"name": "get_balance", "parameters": {}}},
+                    {"type": "function", "function": {"name": "check_eligibility", "parameters": {}}},
+                    {"type": "function", "function": {"name": "transfer_funds", "parameters": {}}},
+                ],
+                "mocks": [
+                    {"tool_name": "get_balance", "scenarios": [{"match_args": {}, "response": '{"balance": 1000}'}]},
+                    {"tool_name": "check_eligibility", "scenarios": [{"match_args": {}, "response": '{"eligible": true}'}]},
+                    {"tool_name": "transfer_funds", "scenarios": [{"match_args": {}, "response": '{"status": "ok"}'}]},
+                ],
+            },
+        )
+
+        tc1 = _make_tool_call("call_1", "get_balance", {})
+        tc2 = _make_tool_call("call_2", "check_eligibility", {"amount": 500})
+        tc3 = _make_tool_call("call_3", "transfer_funds", {"amount": 500})
+
+        responses = [
+            _make_response(content="Let me check...", tool_calls=[tc1], finish_reason="tool_calls"),
+            _make_response(content="Checking eligibility...", tool_calls=[tc2], finish_reason="tool_calls"),
+            _make_response(content="Processing transfer...", tool_calls=[tc3], finish_reason="tool_calls"),
+            _make_response(content="Transfer of $500 completed!", finish_reason="stop"),
+        ]
+        mock_provider = _build_mock_provider(responses)
+
+        with patch(
+            "api.web.routers.playground.create_provider",
+            return_value=mock_provider,
+        ):
+            resp = await client.post(
+                "/api/prompts/chain-prompt/chat",
+                json={"messages": [{"role": "user", "content": "Transfer $500"}]},
+            )
+
+        events = _parse_sse_events(resp.text)
+
+        tool_calls = [e for e in events if e["event"] == "tool_call"]
+        tool_results = [e for e in events if e["event"] == "tool_result"]
+        tokens = [e for e in events if e["event"] == "token"]
+        done = next(e for e in events if e["event"] == "done")
+
+        assert len(tool_calls) == 3
+        assert len(tool_results) == 3
+        assert tool_calls[0]["data"]["name"] == "get_balance"
+        assert tool_calls[1]["data"]["name"] == "check_eligibility"
+        assert tool_calls[2]["data"]["name"] == "transfer_funds"
+
+        # Verify mock responses were used
+        assert '{"balance": 1000}' in tool_results[0]["data"]["content"]
+        assert '{"eligible": true}' in tool_results[1]["data"]["content"]
+        assert '{"status": "ok"}' in tool_results[2]["data"]["content"]
+
+        # Final token should be the completion text
+        assert any("Transfer of $500 completed" in t["data"]["content"] for t in tokens)
+
+        assert done["data"]["steps"] == 4
+        assert done["data"]["finish_reason"] == "stop"
+
+    async def test_max_steps_limit(self, client: httpx.AsyncClient):
+        """Agentic loop stops at max_steps even if model keeps calling tools."""
+        await client.post(
+            "/api/prompts/",
+            json={
+                "id": "loop-prompt",
+                "purpose": "Test max steps",
+                "template": "You are an assistant.",
+                "tools": [{"type": "function", "function": {"name": "search", "parameters": {}}}],
+                "mocks": [{"tool_name": "search", "scenarios": [{"match_args": {}, "response": "no results"}]}],
+            },
+        )
+
+        # Set max_tool_steps=2 via config
+        await client.put(
+            "/api/prompts/loop-prompt/config",
+            json={"max_tool_steps": 2},
+        )
+
+        tc = _make_tool_call("call_x", "search", {"q": "test"})
+
+        # Model always returns tool calls — never stops on its own
+        infinite_tool_response = _make_response(content="Searching...", tool_calls=[tc], finish_reason="tool_calls")
+        final_response = _make_response(content="Done searching.", finish_reason="stop")
+
+        responses = [infinite_tool_response, infinite_tool_response, final_response]
+        mock_provider = _build_mock_provider(responses)
+
+        with patch(
+            "api.web.routers.playground.create_provider",
+            return_value=mock_provider,
+        ):
+            resp = await client.post(
+                "/api/prompts/loop-prompt/chat",
+                json={"messages": [{"role": "user", "content": "search everything"}]},
+            )
+
+        events = _parse_sse_events(resp.text)
+        tool_calls = [e for e in events if e["event"] == "tool_call"]
+        done = next(e for e in events if e["event"] == "done")
+
+        # Should stop after 2 tool steps (max_tool_steps=2)
+        assert len(tool_calls) == 2
+        assert done["data"]["steps"] >= 2
