@@ -23,9 +23,9 @@ from api.dataset.service import DatasetService
 from api.evaluation.scorers import BehaviorJudgeScorer, _normalize_tool_call
 from api.gateway.protocol import LLMProvider
 from api.registry.llm_mocker import LLMMocker
-from api.registry.mock_matcher import MockMatcher
 from api.registry.models import VariableDefinition
 from api.registry.schemas import MockDefinition
+from api.registry.tool_resolver import normalize_tool_call, resolve_tool_call
 from api.synthesis.models import (
     ConversationRecord,
     PersonaProfile,
@@ -255,79 +255,72 @@ class SynthesisEngine:
                 **target_kwargs,
             )
 
-            # Handle tool calls via LLM mocker cascade -> MockMatcher fallback
-            if target_response.tool_calls and (mocks is not None):
-                # Append assistant message with tool_calls
+            # Agentic tool loop: resolve tool calls until stop or max_steps
+            max_tool_steps = 10
+            tool_step = 0
+            current_response = target_response
+            scenario_type = self._derive_scenario_type(scenario_context)
+
+            while current_response.tool_calls and tool_step < max_tool_steps:
+                tool_step += 1
+
                 conversation_history.append(
                     {
                         "role": "assistant",
-                        "content": target_response.content,
-                        "tool_calls": target_response.tool_calls,
+                        "content": current_response.content,
+                        "tool_calls": current_response.tool_calls,
                     }
                 )
 
-                # Determine scenario type from scenario_context
-                scenario_type = self._derive_scenario_type(scenario_context)
-
-                # Resolve each tool call
-                for tc in target_response.tool_calls:
-                    normalized = _normalize_tool_call(tc)
+                for tc in current_response.tool_calls:
+                    normalized = normalize_tool_call(tc)
                     tool_name = normalized["name"]
                     call_args = (
                         normalized["arguments"] if isinstance(normalized["arguments"], dict) else {}
                     )
 
-                    mock_response: str | None = None
-
-                    # Cascade step 1: Try LLM mocker if available and format guide exists
-                    if self._llm_mocker is not None and tool_name in self._format_guides:
-                        mock_response = await self._llm_mocker.generate_mock_response(
-                            tool_name=tool_name,
-                            call_args=call_args,
-                            format_guide_examples=self._format_guides[tool_name],
-                            scenario_type=scenario_type,
-                        )
-
-                    # Cascade step 2: Fall back to static MockMatcher
-                    if mock_response is None:
-                        mock_response = MockMatcher.match(tool_name, call_args, mocks)
+                    result_content = await resolve_tool_call(
+                        tool_name,
+                        call_args,
+                        mocks=mocks,
+                        llm_mocker=self._llm_mocker,
+                        format_guides=self._format_guides if self._format_guides else None,
+                        scenario_type=scenario_type,
+                    )
 
                     conversation_history.append(
                         {
                             "role": "tool",
                             "tool_call_id": tc.get("id", ""),
-                            "content": mock_response or "No mock available",
+                            "content": result_content,
                         }
                     )
 
-                # Call target again with updated messages (it needs to see tool results)
-                target_messages_with_tools: list[dict[str, Any]] = [
+                # Call target again with tool results
+                followup_messages: list[dict[str, Any]] = [
                     {"role": "system", "content": rendered_prompt},
                     *conversation_history,
                 ]
-                followup_response = await self._target_provider.chat_completion(
-                    messages=target_messages_with_tools,
-                    model=self._target_model,
-                    role=ModelRole.TARGET,
-                    tools=tools,
+                followup_kwargs: dict[str, Any] = {
+                    "messages": followup_messages,
+                    "model": self._target_model,
+                    "role": ModelRole.TARGET,
+                    "tools": tools,
+                }
+                if self._target_temperature is not None:
+                    followup_kwargs["temperature"] = self._target_temperature
+                current_response = await self._target_provider.chat_completion(
+                    **followup_kwargs,
                 )
-                # Add the followup text response
-                conversation_history.append(
-                    {
-                        "role": "assistant",
-                        "content": followup_response.content or "",
-                    }
-                )
-                target_text = followup_response.content or ""
-            else:
-                # No tool calls -- add assistant response directly
-                conversation_history.append(
-                    {
-                        "role": "assistant",
-                        "content": target_response.content or "",
-                    }
-                )
-                target_text = target_response.content or ""
+
+            # Add final text response
+            conversation_history.append(
+                {
+                    "role": "assistant",
+                    "content": current_response.content or "",
+                }
+            )
+            target_text = current_response.content or ""
 
             # Update persona messages (persona's perspective: reversed roles)
             persona_messages.append({"role": "assistant", "content": persona_text})

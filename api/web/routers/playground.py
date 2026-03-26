@@ -33,10 +33,11 @@ from api.config.models import GeneConfig
 from api.evaluation.renderer import TemplateRenderer
 from api.gateway.cost import estimate_cost_from_tokens
 from api.gateway.factory import create_provider
-from api.registry.mock_matcher import MockMatcher
+from api.registry.llm_mocker import LLMMocker
 from api.registry.schemas import MockDefinition
 from api.registry.service import PromptRegistry
-from api.storage.models import PlaygroundVariable, PromptConfig
+from api.registry.tool_resolver import normalize_tool_call, resolve_tool_call
+from api.storage.models import PlaygroundVariable, PromptConfig, ToolFormatGuide
 from api.web.deps import get_config, get_db_session, get_registry
 from api.web.schemas import (
     ChatRequest,
@@ -235,8 +236,36 @@ async def chat(
     mocks = record.mocks if record.mocks else None
     max_steps = body.max_steps if body.max_steps is not None else DEFAULT_MAX_STEPS
 
+    # Load LLM mocker config and format guides from DB
+    llm_mocker = None
+    format_guides: dict[str, list[str]] = {}
+
+    if config_row and config_row.extra:
+        tool_mocker_mode = config_row.extra.get("tool_mocker_mode", "static") or "static"
+        tool_mocker_provider = config_row.extra.get("tool_mocker_provider")
+        tool_mocker_model = config_row.extra.get("tool_mocker_model")
+
+        if tool_mocker_mode == "llm" and tool_mocker_provider and tool_mocker_model:
+            # Load format guides
+            fg_result = await session.execute(
+                select(ToolFormatGuide).where(ToolFormatGuide.prompt_id == prompt_id)
+            )
+            for row in fg_result.scalars().all():
+                format_guides[row.tool_name] = row.examples
+
+            if format_guides:
+                try:
+                    mocker_provider = create_provider(tool_mocker_provider, merged_config)
+                    llm_mocker = LLMMocker(mocker_provider, tool_mocker_model)
+                except Exception as exc:
+                    logger.warning("Failed to create LLM mocker: %s", exc)
+
     return StreamingResponse(
-        _sse_generator(merged_config, messages, tools=tools, mocks=mocks, max_steps=max_steps),
+        _sse_generator(
+            merged_config, messages,
+            tools=tools, mocks=mocks, max_steps=max_steps,
+            llm_mocker=llm_mocker, format_guides=format_guides,
+        ),
         media_type="text/event-stream",
     )
 
@@ -253,27 +282,6 @@ async def _limit_reached_generator(turns_used: int, turn_limit: int):
     )
 
 
-def _normalize_tool_call(tc: dict[str, Any]) -> dict[str, Any]:
-    """Extract name and arguments from a tool call dict (various formats)."""
-    if "function" in tc:
-        fn = tc["function"]
-        name = fn.get("name", "")
-        args_raw = fn.get("arguments", "{}")
-    else:
-        name = tc.get("name", "")
-        args_raw = tc.get("arguments", "{}")
-
-    if isinstance(args_raw, str):
-        try:
-            args = json.loads(args_raw)
-        except (json.JSONDecodeError, TypeError):
-            args = {}
-    else:
-        args = args_raw if isinstance(args_raw, dict) else {}
-
-    return {"name": name, "arguments": args}
-
-
 async def _sse_generator(
     config: GeneConfig,
     messages: list[dict],
@@ -281,6 +289,8 @@ async def _sse_generator(
     tools: list[dict] | None = None,
     mocks: list[MockDefinition] | None = None,
     max_steps: int = DEFAULT_MAX_STEPS,
+    llm_mocker: LLMMocker | None = None,
+    format_guides: dict[str, list[str]] | None = None,
 ):
     """Stream LLM response tokens as SSE events with agentic tool loop.
 
@@ -355,7 +365,7 @@ async def _sse_generator(
 
             for tc in message.tool_calls:
                 tc_dict = tc.model_dump()
-                normalized = _normalize_tool_call(tc_dict)
+                normalized = normalize_tool_call(tc_dict)
                 tool_call_id = tc_dict.get("id", "")
 
                 yield _sse_event("tool_call", {
@@ -365,15 +375,13 @@ async def _sse_generator(
                     "step": step,
                 })
 
-                # Resolve mock (if mocks are configured)
-                mock_response = None
-                if mocks:
-                    mock_response = MockMatcher.match(
-                        normalized["name"],
-                        normalized["arguments"],
-                        mocks,
-                    )
-                result_content = mock_response or f'{{"status": "ok", "message": "No mock configured for {normalized["name"]}"}}'
+                result_content = await resolve_tool_call(
+                    normalized["name"],
+                    normalized["arguments"],
+                    mocks=mocks,
+                    llm_mocker=llm_mocker,
+                    format_guides=format_guides,
+                )
 
                 yield _sse_event("tool_result", {
                     "tool_call_id": tool_call_id,

@@ -338,7 +338,7 @@ class TestToolCallInterception:
         )
 
         tool_msg = next(m for m in record.chat_history if m["role"] == "tool")
-        assert "No mock available" in tool_msg["content"]
+        assert "No mock configured" in tool_msg["content"]
 
     @pytest.mark.asyncio
     async def test_multiple_tool_calls_in_one_turn(self) -> None:
