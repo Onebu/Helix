@@ -87,6 +87,48 @@
         }
       }
     },
+    "/api/prompts/extract-variables": {
+      "post": {
+        "tags": [
+          "prompts"
+        ],
+        "summary": "Extract Variables",
+        "description": "Extract Jinja2 template variables from a template string.\n\nUsed by the import flow to auto-detect variables before registration.",
+        "operationId": "extract_variables_api_prompts_extract_variables_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtractVariablesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtractVariablesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/prompts/{prompt_id}/config": {
       "get": {
         "tags": [
@@ -434,7 +476,7 @@
           "prompts"
         ],
         "summary": "Accept Version",
-        "description": "Accept an evolved template as a new version.\n\nCreates a new version from the provided template and sets it as active.\nUsed after evolution runs to accept the best evolved template.",
+        "description": "Accept an evolved template as a new version.\n\nCreates a new version from the provided template and sets it as active.\nIdempotent: returns the existing version if the template already matches.\nUsed after evolution runs to accept the best evolved template.",
         "operationId": "accept_version_api_prompts__prompt_id__versions_accept_post",
         "parameters": [
           {
@@ -3383,6 +3425,45 @@
         "title": "EvolutionRunStatus",
         "description": "Status of a running evolution."
       },
+      "ExtractVariablesRequest": {
+        "properties": {
+          "template": {
+            "type": "string",
+            "title": "Template"
+          }
+        },
+        "type": "object",
+        "required": [
+          "template"
+        ],
+        "title": "ExtractVariablesRequest",
+        "description": "Request body for extracting variables from a template."
+      },
+      "ExtractVariablesResponse": {
+        "properties": {
+          "variables": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Variables"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "variables"
+        ],
+        "title": "ExtractVariablesResponse",
+        "description": "Response with extracted template variables."
+      },
       "FormatGuideResponse": {
         "properties": {
           "id": {
@@ -4286,6 +4367,11 @@
           "is_active": {
             "type": "boolean",
             "title": "Is Active"
+          },
+          "already_existed": {
+            "type": "boolean",
+            "title": "Already Existed",
+            "default": false
           }
         },
         "type": "object",

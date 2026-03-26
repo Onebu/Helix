@@ -31,13 +31,19 @@ export default function PromptTemplatePage() {
     <div>
       {!editing ? (
         <div className="space-y-6">
-          <PromptDetail
-            promptId={promptId}
-            onEditTemplate={() => setEditing(true)}
-          />
-
-          {/* Section 5: Version History */}
-          <VersionHistorySection promptId={promptId} />
+          {/* Top row: Template Preview + Version History side by side on large screens */}
+          <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6">
+            <PromptDetail
+              promptId={promptId}
+              onEditTemplate={() => setEditing(true)}
+            />
+            <div className="space-y-3">
+              <h3 className="text-lg font-semibold text-foreground">{t('prompts.versionHistory')}</h3>
+              <div className="xl:sticky xl:top-4">
+                <VersionHistory promptId={promptId} />
+              </div>
+            </div>
+          </div>
         </div>
       ) : (
         <div className="space-y-4">
@@ -60,16 +66,6 @@ export default function PromptTemplatePage() {
           </Suspense>
         </div>
       )}
-    </div>
-  )
-}
-
-function VersionHistorySection({ promptId }: { promptId: string }) {
-  const { t } = useTranslation()
-  return (
-    <div className="space-y-3">
-      <h3 className="text-lg font-semibold text-foreground">{t('prompts.versionHistory')}</h3>
-      <VersionHistory promptId={promptId} />
     </div>
   )
 }

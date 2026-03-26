@@ -520,7 +520,27 @@
     "copied": "已复制！",
     "registering": "注册中...",
     "registerPrompt": "注册提示词",
-    "failedToRegister": "注册提示词失败"
+    "failedToRegister": "注册提示词失败",
+    "createWithWizard": "使用向导创建"
+  },
+  "import": {
+    "importTemplate": "导入模板",
+    "uploadTemplate": "上传模板",
+    "dropFile": "将模板文件拖放到此处，或点击浏览",
+    "browseFiles": "浏览文件",
+    "supportedFormats": "支持格式: .md, .txt, .yaml, .yml, .j2, .jinja2, .tmpl",
+    "orPaste": "或直接在下方编辑器中粘贴模板内容。",
+    "templateContent": "模板内容",
+    "extractVariables": "提取变量",
+    "extracting": "提取中...",
+    "detectedVariables": "检测到的变量",
+    "variableDescriptionPlaceholder": "描述此变量...",
+    "promptDetails": "提示词详情",
+    "registerPrompt": "注册提示词",
+    "registering": "注册中...",
+    "toolDefinitions": "工具定义",
+    "uploadToolsJson": "上传 tools.json",
+    "toolsHint": "OpenAI function-calling 格式: [{\"type\": \"function\", \"function\": {\"name\": \"...\", ...}}] 或 {\"tools\": [...]}。也接受 [{\"name\": \"...\"}] 格式。"
   },
   "history": {
     "id": "ID",

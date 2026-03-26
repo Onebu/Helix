@@ -543,7 +543,27 @@
     "copied": "Copied!",
     "registering": "Registering...",
     "registerPrompt": "Register Prompt",
-    "failedToRegister": "Failed to register prompt"
+    "failedToRegister": "Failed to register prompt",
+    "createWithWizard": "Create with Wizard"
+  },
+  "import": {
+    "importTemplate": "Import Template",
+    "uploadTemplate": "Upload Template",
+    "dropFile": "Drop a template file here, or click to browse",
+    "browseFiles": "Browse Files",
+    "supportedFormats": "Supported: .md, .txt, .yaml, .yml, .j2, .jinja2, .tmpl",
+    "orPaste": "Or paste your template content directly in the editor below.",
+    "templateContent": "Template Content",
+    "extractVariables": "Extract Variables",
+    "extracting": "Extracting...",
+    "detectedVariables": "Detected Variables",
+    "variableDescriptionPlaceholder": "Describe this variable...",
+    "promptDetails": "Prompt Details",
+    "registerPrompt": "Register Prompt",
+    "registering": "Registering...",
+    "toolDefinitions": "Tool Definitions",
+    "uploadToolsJson": "Upload tools.json",
+    "toolsHint": "Accepts OpenAI function-calling format: [{\"type\": \"function\", \"function\": {\"name\": \"...\", ...}}] or {\"tools\": [...]}. Bare [{\"name\": \"...\"}] objects are also accepted."
   },
   "history": {
     "id": "ID",

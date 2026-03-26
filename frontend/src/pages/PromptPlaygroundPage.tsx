@@ -91,7 +91,7 @@ export default function PromptPlaygroundPage() {
   const [costBudget, setCostBudget] = useState(0.5)
   const [inputValue, setInputValue] = useState('')
   const [showSystemPrompt, setShowSystemPrompt] = useState(false)
-  const [showVariables, setShowVariables] = useState(true)
+  const [showVariables, setShowVariables] = useState(false)
 
   // Save as Test Case dialog state
   const [showSaveDialog, setShowSaveDialog] = useState(false)
@@ -321,7 +321,7 @@ export default function PromptPlaygroundPage() {
             </CollapsibleTrigger>
             <CollapsibleContent>
               <Card className="mt-2">
-                <CardContent className="pt-4 pb-3">
+                <CardContent className="pt-4 pb-3 max-h-[30vh] overflow-y-auto">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {detail.template_variables.map((varName) => (
                       <div key={varName} className="space-y-1">

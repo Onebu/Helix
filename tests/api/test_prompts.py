@@ -206,3 +206,44 @@ async def test_get_prompt_without_schemas_returns_none(client: httpx.AsyncClient
     data = resp.json()
     assert data["tool_schemas"] is None
     assert data["mocks"] is None
+
+
+# -- POST /api/prompts/extract-variables --
+
+
+async def test_extract_variables(client: httpx.AsyncClient):
+    """POST /api/prompts/extract-variables extracts Jinja2 variables."""
+    resp = await client.post(
+        "/api/prompts/extract-variables",
+        json={"template": "Hello {{ name }}, your order {{ order_id }} is ready."},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert sorted(data["variables"]) == ["name", "order_id"]
+    assert data["errors"] == []
+
+
+async def test_extract_variables_empty_template(client: httpx.AsyncClient):
+    """POST /api/prompts/extract-variables with no variables returns empty list."""
+    resp = await client.post(
+        "/api/prompts/extract-variables",
+        json={"template": "Hello world, no variables here."},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["variables"] == []
+    assert data["errors"] == []
+
+
+async def test_extract_variables_complex_template(client: httpx.AsyncClient):
+    """POST /api/prompts/extract-variables handles filters and nested access."""
+    resp = await client.post(
+        "/api/prompts/extract-variables",
+        json={"template": "{{ greeting | upper }} {{ user }}! {% if show_details %}Details: {{ details }}{% endif %}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "greeting" in data["variables"]
+    assert "user" in data["variables"]
+    assert "details" in data["variables"]
+    assert "show_details" in data["variables"]

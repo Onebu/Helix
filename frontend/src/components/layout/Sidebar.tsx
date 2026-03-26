@@ -59,7 +59,11 @@ function SidebarContent({ collapsed, setCollapsed, onNavClick }: { collapsed: bo
   const themeIcon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor
   const ThemeIcon = themeIcon
 
-  const currentLangLabel = LANGUAGES.find((l) => l.value === i18n.language)?.label ?? 'English'
+  // i18n.language can include region (e.g. "en-GB") — normalize to base code for matching
+  const baseLang = LANGUAGES.find((l) => l.value === i18n.language)
+    ? i18n.language
+    : LANGUAGES.find((l) => i18n.language.startsWith(l.value))?.value ?? 'en'
+  const currentLangLabel = LANGUAGES.find((l) => l.value === baseLang)?.label ?? 'English'
 
   return (
     <>
@@ -197,11 +201,11 @@ function SidebarContent({ collapsed, setCollapsed, onNavClick }: { collapsed: bo
             <div className="flex h-10 items-center gap-3 rounded-md px-3">
               <Globe className="h-4 w-4 text-muted-foreground shrink-0" aria-hidden="true" />
               <Select
-                value={i18n.language}
+                value={baseLang}
                 onValueChange={(value) => i18n.changeLanguage(value)}
               >
                 <SelectTrigger className="h-8 flex-1 text-sm border-0 bg-transparent px-0 shadow-none focus:ring-0">
-                  <SelectValue />
+                  <SelectValue placeholder={currentLangLabel} />
                 </SelectTrigger>
                 <SelectContent>
                   {LANGUAGES.map((lang) => (
