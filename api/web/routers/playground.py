@@ -36,7 +36,7 @@ from api.gateway.factory import create_provider
 from api.registry.llm_mocker import LLMMocker
 from api.registry.schemas import MockDefinition
 from api.registry.service import PromptRegistry
-from api.registry.tool_resolver import normalize_tool_call, resolve_tool_call
+from api.registry.tool_resolver import DEFAULT_MAX_TOOL_STEPS, normalize_tool_call, resolve_tool_call
 from api.storage.models import PlaygroundVariable, PromptConfig, ToolFormatGuide
 from api.web.deps import get_config, get_db_session, get_registry
 from api.web.schemas import (
@@ -51,7 +51,6 @@ router = APIRouter()
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MAX_STEPS = 10
 
 
 @router.get("/{prompt_id}/variables", response_model=PlaygroundVariablesResponse)
@@ -234,7 +233,7 @@ async def chat(
     # Collect tools and mocks from the prompt record
     tools = record.tools if record.tools else None
     mocks = record.mocks if record.mocks else None
-    max_steps = body.max_steps if body.max_steps is not None else DEFAULT_MAX_STEPS
+    max_steps = body.max_steps if body.max_steps is not None else DEFAULT_MAX_TOOL_STEPS
 
     # Load LLM mocker config and format guides from DB
     llm_mocker = None
@@ -288,7 +287,7 @@ async def _sse_generator(
     *,
     tools: list[dict] | None = None,
     mocks: list[MockDefinition] | None = None,
-    max_steps: int = DEFAULT_MAX_STEPS,
+    max_steps: int = DEFAULT_MAX_TOOL_STEPS,
     llm_mocker: LLMMocker | None = None,
     format_guides: dict[str, list[str]] | None = None,
 ):

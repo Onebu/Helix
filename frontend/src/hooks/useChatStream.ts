@@ -99,6 +99,7 @@ export function useChatStream(promptId: string) {
       variables: Record<string, string>,
       turnLimit: number,
       costBudget: number,
+      maxSteps?: number,
     ) => {
       // Check cost budget client-side before sending
       if (state.totalCost >= costBudget && costBudget > 0) {
@@ -127,11 +128,14 @@ export function useChatStream(promptId: string) {
         (m) => m.role === 'user' || m.role === 'assistant',
       )
 
-      const requestBody = {
+      const requestBody: Record<string, unknown> = {
         messages: allMessages.map((m) => ({ role: m.role, content: m.content })),
         variables,
         turn_limit: turnLimit,
         cost_budget: costBudget,
+      }
+      if (maxSteps !== undefined) {
+        requestBody.max_steps = maxSteps
       }
 
       try {

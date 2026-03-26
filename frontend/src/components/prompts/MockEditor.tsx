@@ -40,14 +40,14 @@ export function MockEditor({ promptId, toolNames }: { promptId: string; toolName
   const { data: savedMocks, isLoading } = useQuery({
     queryKey: ['mocks', promptId],
     queryFn: () => fetchMocks(promptId),
+    refetchOnWindowFocus: false,
   })
 
   useEffect(() => {
-    if (savedMocks) {
+    if (savedMocks && !dirty) {
       setMocks(savedMocks)
-      setDirty(false)
     }
-  }, [savedMocks])
+  }, [savedMocks, dirty])
 
   const saveMutation = useMutation({
     mutationFn: () => saveMocks(promptId, mocks),

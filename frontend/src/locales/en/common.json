@@ -593,6 +593,7 @@
     "missingPromptId": "Missing prompt ID.",
     "model": "{{provider}} / {{model}}",
     "turnLimit": "Turn limit",
+    "maxSteps": "Max steps",
     "budget": "Budget ($)",
     "saveAsTestCase": "Save as Test Case",
     "savedBang": "Saved!",

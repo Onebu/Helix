@@ -26,7 +26,7 @@ from api.gateway.cost import CostTracker
 from api.gateway.protocol import LLMProvider
 from api.registry.llm_mocker import LLMMocker
 from api.registry.schemas import MockDefinition
-from api.registry.tool_resolver import normalize_tool_call, resolve_tool_call
+from api.registry.tool_resolver import DEFAULT_MAX_TOOL_STEPS, normalize_tool_call, resolve_tool_call
 from api.types import ModelRole
 
 logger = logging.getLogger(__name__)
@@ -74,7 +74,7 @@ class FitnessEvaluator:
         mocks: list[MockDefinition] | None = None,
         llm_mocker: LLMMocker | None = None,
         format_guides: dict[str, list[str]] | None = None,
-        max_tool_steps: int = 10,
+        max_tool_steps: int = DEFAULT_MAX_TOOL_STEPS,
     ) -> None:
         self._client = client
         self._renderer = renderer

@@ -162,11 +162,13 @@ export default function PromptPlaygroundPage() {
   })
 
   const chat = useChatStream(promptId ?? '')
+  const messageGroups = useMemo(() => groupMessagesByStep(chat.messages), [chat.messages])
 
   // Local state
   const [variables, setVariables] = useState<Record<string, string>>({})
   const [turnLimit, setTurnLimit] = useState(20)
   const [costBudget, setCostBudget] = useState(0.5)
+  const [maxSteps, setMaxSteps] = useState(10)
   const [inputValue, setInputValue] = useState('')
   const [showSystemPrompt, setShowSystemPrompt] = useState(false)
   const [showVariables, setShowVariables] = useState(false)
@@ -250,7 +252,7 @@ export default function PromptPlaygroundPage() {
   const handleSend = () => {
     const trimmed = inputValue.trim()
     if (!trimmed || chat.isStreaming || chat.limitReached) return
-    chat.sendMessage(trimmed, variables, turnLimit, costBudget)
+    chat.sendMessage(trimmed, variables, turnLimit, costBudget, maxSteps)
     setInputValue('')
   }
 
@@ -329,6 +331,7 @@ export default function PromptPlaygroundPage() {
   }
 
   const hasVariables = detail?.template_variables && detail.template_variables.length > 0
+  const hasTools = detail?.tools && (detail.tools as unknown[]).length > 0
 
   return (
     <div className="flex flex-col h-[calc(100vh-16rem)]">
@@ -372,6 +375,21 @@ export default function PromptPlaygroundPage() {
                 disabled={chat.isStreaming}
               />
             </div>
+            {/* Max tool steps */}
+            {hasTools && (
+              <div className="flex items-center gap-1.5">
+                <label className="text-xs text-muted-foreground whitespace-nowrap">{t('playground.maxSteps')}</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={maxSteps}
+                  onChange={(e) => setMaxSteps(Number(e.target.value))}
+                  className="w-16 h-8 text-xs"
+                  disabled={chat.isStreaming}
+                />
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {canSaveTestCase && (
@@ -453,7 +471,7 @@ export default function PromptPlaygroundPage() {
               {t('playground.emptyChat')}
             </div>
           )}
-          {groupMessagesByStep(chat.messages).map((group, i, allGroups) => (
+          {messageGroups.map((group, i, allGroups) => (
             <MessageGroup
               key={i}
               messages={group}

@@ -20,6 +20,8 @@ from api.registry.schemas import MockDefinition
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_MAX_TOOL_STEPS = 10
+
 
 def normalize_tool_call(tc: dict[str, Any]) -> dict[str, Any]:
     """Extract name and arguments from a tool call dict (various formats)."""
