@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 
+import jinja2
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +28,8 @@ from api.web.deps import get_config, get_db_session, get_registry
 from api.web.schemas import (
     AcceptVersionRequest,
     CreatePromptRequest,
+    ExtractVariablesRequest,
+    ExtractVariablesResponse,
     PromptConfigResponse,
     PromptDetail,
     PromptSummary,
@@ -142,6 +145,24 @@ def _merge_overrides_onto_config(config: GeneConfig, overrides_dict: dict) -> Ge
             update[key] = value
 
     return config.model_copy(update=update)
+
+
+@router.post("/extract-variables", response_model=ExtractVariablesResponse)
+async def extract_variables(
+    body: ExtractVariablesRequest,
+    registry: PromptRegistry = Depends(get_registry),
+) -> ExtractVariablesResponse:
+    """Extract Jinja2 template variables from a template string.
+
+    Used by the import flow to auto-detect variables before registration.
+    """
+    errors: list[str] = []
+    try:
+        variables = sorted(registry.extract_variables(body.template))
+    except jinja2.TemplateSyntaxError as exc:
+        variables = []
+        errors.append(f"Template syntax error: {exc}")
+    return ExtractVariablesResponse(variables=variables, errors=errors)
 
 
 @router.get("/{prompt_id}/config", response_model=PromptConfigResponse)

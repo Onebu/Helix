@@ -86,7 +86,7 @@ class PromptRegistry:
                 )
 
             # Extract template variables
-            template_variables = self._extract_variables(prompt_data.template)
+            template_variables = self.extract_variables(prompt_data.template)
 
             # Build variable definitions -- merge explicit with auto-extracted
             variable_defs = self._build_variable_definitions(
@@ -193,7 +193,7 @@ class PromptRegistry:
                 VariableDefinition(**v) for v in (prompt_row.variables or [])
             ]
             anchor_variables = _extract_anchor_variables(variable_defs)
-            template_variables = self._extract_variables(prompt_row.template)
+            template_variables = self.extract_variables(prompt_row.template)
 
             # Reconstruct tools
             tools = prompt_row.tools if prompt_row.tools else None
@@ -319,7 +319,7 @@ class PromptRegistry:
             await session.commit()
 
             # Re-extract variables
-            template_variables = self._extract_variables(new_template)
+            template_variables = self.extract_variables(new_template)
 
             # Read existing variable definitions for anchor info
             variable_defs = [
@@ -584,7 +584,7 @@ class PromptRegistry:
                 )
             return version_row.template
 
-    def _extract_variables(self, template_source: str) -> set[str]:
+    def extract_variables(self, template_source: str) -> set[str]:
         """Extract variable names from a Jinja2 template.
 
         Uses jinja2 Environment.parse() + meta.find_undeclared_variables()

@@ -520,7 +520,27 @@
     "copied": "Copiado!",
     "registering": "Registrando...",
     "registerPrompt": "Registrar prompt",
-    "failedToRegister": "Error al registrar el prompt"
+    "failedToRegister": "Error al registrar el prompt",
+    "createWithWizard": "Crear con asistente"
+  },
+  "import": {
+    "importTemplate": "Importar plantilla",
+    "uploadTemplate": "Subir plantilla",
+    "dropFile": "Arrastra un archivo de plantilla aquí, o haz clic para buscar",
+    "browseFiles": "Buscar archivos",
+    "supportedFormats": "Formatos: .md, .txt, .yaml, .yml, .j2, .jinja2, .tmpl",
+    "orPaste": "O pega el contenido de tu plantilla directamente en el editor.",
+    "templateContent": "Contenido de la plantilla",
+    "extractVariables": "Extraer variables",
+    "extracting": "Extrayendo...",
+    "detectedVariables": "Variables detectadas",
+    "variableDescriptionPlaceholder": "Describe esta variable...",
+    "promptDetails": "Detalles del prompt",
+    "registerPrompt": "Registrar prompt",
+    "registering": "Registrando...",
+    "toolDefinitions": "Definiciones de herramientas",
+    "uploadToolsJson": "Subir tools.json",
+    "toolsHint": "Formato OpenAI function-calling: [{\"type\": \"function\", \"function\": {\"name\": \"...\", ...}}] o {\"tools\": [...]}. También acepta [{\"name\": \"...\"}]."
   },
   "history": {
     "id": "ID",

@@ -145,14 +145,23 @@ export function CaseList({ promptId }: { promptId: string }) {
             <p className="text-sm text-muted-foreground mb-4">
               {t('datasets.noTestCasesDescription')}
             </p>
-            <Button
-              onClick={() => {
-                setEditingCase(undefined)
-                setEditorOpen(true)
-              }}
-            >
-              {t('datasets.addTestCase')}
-            </Button>
+            <div className="flex flex-col sm:flex-row gap-2 justify-center">
+              <Button
+                onClick={() => {
+                  setEditingCase(undefined)
+                  setEditorOpen(true)
+                }}
+              >
+                {t('datasets.addTestCase')}
+              </Button>
+              <Button variant="outline" onClick={() => setImportOpen(true)}>
+                {t('common.import')}
+              </Button>
+              <Button variant="outline" onClick={() => setSynthDialogOpen(true)}>
+                <Sparkles className="h-4 w-4 mr-1" />
+                {t('datasets.generateTests')}
+              </Button>
+            </div>
           </div>
         </div>
       ) : (

@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { SLUG_PATTERN } from './constants'
 import { StepIndicator } from './StepIndicator'
 import { PurposeStep } from './PurposeStep'
 import { VariablesStep } from './VariablesStep'
@@ -29,8 +30,6 @@ export interface WizardData {
 }
 
 // STEP_LABELS moved inside component for i18n
-
-const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/
 
 function isStepValid(step: number, data: WizardData): boolean {
   switch (step) {

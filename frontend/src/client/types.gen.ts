@@ -477,6 +477,34 @@ export type EvolutionRunStatus = {
 };
 
 /**
+ * ExtractVariablesRequest
+ *
+ * Request body for extracting variables from a template.
+ */
+export type ExtractVariablesRequest = {
+    /**
+     * Template
+     */
+    template: string;
+};
+
+/**
+ * ExtractVariablesResponse
+ *
+ * Response with extracted template variables.
+ */
+export type ExtractVariablesResponse = {
+    /**
+     * Variables
+     */
+    variables: Array<string>;
+    /**
+     * Errors
+     */
+    errors?: Array<string>;
+};
+
+/**
  * FormatGuideResponse
  *
  * Response representation of a tool format guide.
@@ -1057,6 +1085,10 @@ export type PromptVersionResponse = {
      * Is Active
      */
     is_active: boolean;
+    /**
+     * Already Existed
+     */
+    already_existed?: boolean;
 };
 
 /**
@@ -1858,6 +1890,31 @@ export type CreatePromptApiPromptsPostResponses = {
 };
 
 export type CreatePromptApiPromptsPostResponse = CreatePromptApiPromptsPostResponses[keyof CreatePromptApiPromptsPostResponses];
+
+export type ExtractVariablesApiPromptsExtractVariablesPostData = {
+    body: ExtractVariablesRequest;
+    path?: never;
+    query?: never;
+    url: '/api/prompts/extract-variables';
+};
+
+export type ExtractVariablesApiPromptsExtractVariablesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ExtractVariablesApiPromptsExtractVariablesPostError = ExtractVariablesApiPromptsExtractVariablesPostErrors[keyof ExtractVariablesApiPromptsExtractVariablesPostErrors];
+
+export type ExtractVariablesApiPromptsExtractVariablesPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ExtractVariablesResponse;
+};
+
+export type ExtractVariablesApiPromptsExtractVariablesPostResponse = ExtractVariablesApiPromptsExtractVariablesPostResponses[keyof ExtractVariablesApiPromptsExtractVariablesPostResponses];
 
 export type GetPromptConfigApiPromptsPromptIdConfigGetData = {
     body?: never;

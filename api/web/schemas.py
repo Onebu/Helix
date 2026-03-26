@@ -192,6 +192,19 @@ class UpdateTemplateRequest(BaseModel):
     template: str
 
 
+class ExtractVariablesRequest(BaseModel):
+    """Request body for extracting variables from a template."""
+
+    template: str
+
+
+class ExtractVariablesResponse(BaseModel):
+    """Response with extracted template variables."""
+
+    variables: list[str]
+    errors: list[str] = []
+
+
 class TestCaseResponse(BaseModel):
     """Response representation of a test case."""
 

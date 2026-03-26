@@ -3,8 +3,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import type { WizardData } from './WizardFlow'
-
-const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/
+import { SLUG_PATTERN } from './constants'
 
 interface PurposeStepProps {
   data: WizardData
