@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.config.models import GeneConfig, GenerationConfig
 from api.registry.models import PromptRegistration, VariableDefinition
 from api.registry.schemas import PromptConfigSchema
-from api.registry.service import PromptRegistry
+from api.registry.service import PromptRegistry, _extract_anchor_variables
 from api.storage.models import Prompt as PromptModel
 from api.storage.models import PromptConfig
 from api.web.deps import get_config, get_db_session, get_registry
@@ -38,6 +38,8 @@ from api.web.schemas import (
     ToolMockerConfigResponse,
     UpdateMocksRequest,
     UpdateTemplateRequest,
+    UpdateToolsRequest,
+    UpdateVariablesRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -340,6 +342,43 @@ async def update_template(
     return _record_to_summary(record)
 
 
+@router.put("/{prompt_id}/variable-definitions", response_model=PromptSummary)
+async def update_variable_definitions(
+    prompt_id: str,
+    body: UpdateVariablesRequest,
+    registry: PromptRegistry = Depends(get_registry),
+    session: AsyncSession = Depends(get_db_session),
+) -> PromptSummary:
+    """Update variable definitions for a prompt.
+
+    Replaces the stored variable definitions and re-derives anchor_variables.
+    """
+    result = await session.execute(
+        select(PromptModel).where(PromptModel.id == prompt_id)
+    )
+    prompt_row = result.scalar_one_or_none()
+    if not prompt_row:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+
+    # Validate each dict as a VariableDefinition
+    variable_defs = [VariableDefinition(**d) for d in body.variables]
+
+    # Serialize back to JSON-safe dicts
+    prompt_row.variables = [v.model_dump() for v in variable_defs]
+    await session.commit()
+
+    # Re-derive template_variables and anchor_variables for the response
+    template_variables = registry.extract_variables(prompt_row.template)
+    anchor_variables = _extract_anchor_variables(variable_defs)
+
+    return PromptSummary(
+        id=prompt_row.id,
+        purpose=prompt_row.purpose,
+        template_variables=sorted(template_variables),
+        anchor_variables=sorted(anchor_variables),
+    )
+
+
 @router.put("/{prompt_id}/mocks")
 async def update_mocks(
     prompt_id: str,
@@ -360,6 +399,25 @@ async def update_mocks(
     prompt_row.mocks = body.mocks
     await session.commit()
     return {"status": "ok", "mock_count": len(body.mocks)}
+
+
+@router.put("/{prompt_id}/tools")
+async def update_tools(
+    prompt_id: str,
+    body: UpdateToolsRequest,
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Update tool definitions for a prompt."""
+    result = await session.execute(
+        select(PromptModel).where(PromptModel.id == prompt_id)
+    )
+    prompt_row = result.scalar_one_or_none()
+    if not prompt_row:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+
+    prompt_row.tools = body.tools if body.tools else None
+    await session.commit()
+    return {"status": "ok", "tool_count": len(body.tools)}
 
 
 @router.get("/{prompt_id}/mocks")

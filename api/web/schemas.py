@@ -192,6 +192,18 @@ class UpdateTemplateRequest(BaseModel):
     template: str
 
 
+class UpdateVariablesRequest(BaseModel):
+    """Request body for updating a prompt's variable definitions."""
+
+    variables: list[dict]
+
+
+class UpdateToolsRequest(BaseModel):
+    """Request body for updating a prompt's tool definitions."""
+
+    tools: list[dict]
+
+
 class UpdateMocksRequest(BaseModel):
     """Request body for updating a prompt's mock definitions."""
 

@@ -208,6 +208,144 @@ async def test_get_prompt_without_schemas_returns_none(client: httpx.AsyncClient
     assert data["mocks"] is None
 
 
+# -- PUT /api/prompts/{id}/variables --
+
+
+async def test_update_variables(client: httpx.AsyncClient):
+    """PUT /api/prompts/{id}/variables updates variable definitions."""
+    await _register_prompt(client, "var-prompt", "Hello {{ name }}", "Var test")
+
+    resp = await client.put(
+        "/api/prompts/var-prompt/variable-definitions",
+        json={
+            "variables": [
+                {
+                    "name": "name",
+                    "var_type": "string",
+                    "description": "Customer name",
+                    "is_anchor": True,
+                },
+            ]
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["id"] == "var-prompt"
+    assert "name" in data["anchor_variables"]
+
+    # Verify via GET that variable_definitions are persisted
+    detail = await client.get("/api/prompts/var-prompt")
+    defs = detail.json()["variable_definitions"]
+    assert len(defs) == 1
+    assert defs[0]["name"] == "name"
+    assert defs[0]["is_anchor"] is True
+    assert defs[0]["description"] == "Customer name"
+
+
+async def test_update_variables_not_found(client: httpx.AsyncClient):
+    """PUT /api/prompts/nonexistent/variable-definitions returns 404."""
+    resp = await client.put(
+        "/api/prompts/nonexistent/variable-definitions",
+        json={"variables": []},
+    )
+    assert resp.status_code == 404
+
+
+async def test_update_variables_removes_anchor(client: httpx.AsyncClient):
+    """PUT /api/prompts/{id}/variables can toggle anchor off."""
+    # Create with anchor
+    await client.post(
+        "/api/prompts/",
+        json={
+            "id": "anchor-toggle",
+            "purpose": "Toggle test",
+            "template": "Hello {{ name }}",
+            "variables": [
+                {"name": "name", "var_type": "string", "is_anchor": True},
+            ],
+        },
+    )
+
+    # Remove anchor
+    resp = await client.put(
+        "/api/prompts/anchor-toggle/variable-definitions",
+        json={
+            "variables": [
+                {"name": "name", "var_type": "string", "is_anchor": False},
+            ]
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["anchor_variables"] == []
+
+
+# -- PUT /api/prompts/{id}/tools --
+
+
+async def test_update_tools(client: httpx.AsyncClient):
+    """PUT /api/prompts/{id}/tools updates tool definitions."""
+    await _register_prompt(client, "tool-prompt", "Hello {{ name }}", "Tool test")
+
+    new_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "lookup",
+                "description": "Look up data",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+            },
+        }
+    ]
+    resp = await client.put(
+        "/api/prompts/tool-prompt/tools",
+        json={"tools": new_tools},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["tool_count"] == 1
+
+    # Verify via GET
+    detail = await client.get("/api/prompts/tool-prompt")
+    tools = detail.json()["tools"]
+    assert len(tools) == 1
+    assert tools[0]["function"]["name"] == "lookup"
+
+
+async def test_update_tools_not_found(client: httpx.AsyncClient):
+    """PUT /api/prompts/nonexistent/tools returns 404."""
+    resp = await client.put(
+        "/api/prompts/nonexistent/tools",
+        json={"tools": []},
+    )
+    assert resp.status_code == 404
+
+
+async def test_update_tools_clear(client: httpx.AsyncClient):
+    """PUT /api/prompts/{id}/tools with empty list clears tools."""
+    await client.post(
+        "/api/prompts/",
+        json={
+            "id": "clear-tools",
+            "purpose": "Clear test",
+            "template": "Hello {{ name }}",
+            "tools": [{"type": "function", "function": {"name": "old_tool"}}],
+        },
+    )
+
+    resp = await client.put(
+        "/api/prompts/clear-tools/tools",
+        json={"tools": []},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["tool_count"] == 0
+
+    detail = await client.get("/api/prompts/clear-tools")
+    assert detail.json()["tools"] is None
+
+
 # -- POST /api/prompts/extract-variables --
 
 

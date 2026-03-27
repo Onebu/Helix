@@ -319,6 +319,59 @@
         }
       }
     },
+    "/api/prompts/{prompt_id}/variable-definitions": {
+      "put": {
+        "tags": [
+          "prompts"
+        ],
+        "summary": "Update Variable Definitions",
+        "description": "Update variable definitions for a prompt.\n\nReplaces the stored variable definitions and re-derives anchor_variables.",
+        "operationId": "update_variable_definitions_api_prompts__prompt_id__variable_definitions_put",
+        "parameters": [
+          {
+            "name": "prompt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Prompt Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateVariablesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/prompts/{prompt_id}/mocks": {
       "put": {
         "tags": [
@@ -400,6 +453,61 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Get Mocks Api Prompts  Prompt Id  Mocks Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/prompts/{prompt_id}/tools": {
+      "put": {
+        "tags": [
+          "prompts"
+        ],
+        "summary": "Update Tools",
+        "description": "Update tool definitions for a prompt.",
+        "operationId": "update_tools_api_prompts__prompt_id__tools_put",
+        "parameters": [
+          {
+            "name": "prompt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Prompt Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateToolsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Update Tools Api Prompts  Prompt Id  Tools Put"
                 }
               }
             }
@@ -4309,6 +4417,17 @@
             ],
             "title": "Tool Mocker Model"
           },
+          "max_tool_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tool Steps"
+          },
           "generation": {
             "anyOf": [
               {
@@ -5688,6 +5807,42 @@
         ],
         "title": "UpdateTemplateRequest",
         "description": "Request body for updating a prompt's template."
+      },
+      "UpdateToolsRequest": {
+        "properties": {
+          "tools": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Tools"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tools"
+        ],
+        "title": "UpdateToolsRequest",
+        "description": "Request body for updating a prompt's tool definitions."
+      },
+      "UpdateVariablesRequest": {
+        "properties": {
+          "variables": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Variables"
+          }
+        },
+        "type": "object",
+        "required": [
+          "variables"
+        ],
+        "title": "UpdateVariablesRequest",
+        "description": "Request body for updating a prompt's variable definitions."
       },
       "ValidationError": {
         "properties": {

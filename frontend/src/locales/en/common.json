@@ -81,7 +81,14 @@
     "tierBreakdown": "{{critical}} critical, {{normal}} normal, {{low}} low",
     "viewDatasetTab": "View Dataset Tab",
     "noTestCases": "No test cases yet.",
-    "noParameters": "No parameters"
+    "noParameters": "No parameters",
+    "descriptionPlaceholder": "What this variable represents...",
+    "anchorHint": "(preserved during evolution)",
+    "addSubField": "Add Sub-field",
+    "addVariable": "Add Variable",
+    "addTool": "Add Tool",
+    "newTool": "New Tool",
+    "invalidToolJson": "Invalid JSON"
   },
   "settings": {
     "title": "Settings",

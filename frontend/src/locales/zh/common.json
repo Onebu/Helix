@@ -59,7 +59,14 @@
     "editingTemplate": "编辑模板中",
     "saving": "保存中...",
     "saved": "已保存！",
-    "failedToSaveTemplate": "保存模板失败。"
+    "failedToSaveTemplate": "保存模板失败。",
+    "descriptionPlaceholder": "这个变量代表什么...",
+    "anchorHint": "（进化过程中保持不变）",
+    "addSubField": "添加子字段",
+    "addVariable": "添加变量",
+    "addTool": "添加工具",
+    "newTool": "新工具",
+    "invalidToolJson": "无效的 JSON"
   },
   "settings": {
     "title": "设置",
