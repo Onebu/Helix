@@ -31,6 +31,7 @@ Helix includes a web dashboard for configuration, real-time monitoring during ev
 - Interactive lineage graph with click-to-diff
 - Multi-language UI (English, Chinese, Spanish)
 - Docker Compose for single-command deployment
+- **Standalone CLI** (`helix-cli`) for terminal-based evolution with YAML project files
 
 ## Screenshots
 
@@ -99,6 +100,23 @@ docker compose up --build
 
 This launches the backend, frontend (via nginx on port 80), and a SQLite database. Open [http://localhost](http://localhost) to access the dashboard.
 
+### Alternative: CLI Only
+
+For terminal-based usage without the web UI:
+
+```bash
+uv pip install -e .          # core engine
+uv pip install -e cli/       # CLI tool
+
+helix init my-prompt         # scaffold a prompt project
+# edit YAML files...
+helix evolve my-prompt       # run evolution
+helix results my-prompt      # view results
+helix accept my-prompt       # apply evolved template
+```
+
+All commands support `--json` for AI agent integration. See the full [CLI documentation](cli/README.md).
+
 ## Architecture Overview
 
 ```
@@ -112,6 +130,9 @@ api/
   lineage/        Candidate ancestry tracking
   registry/       Prompt registration and section management
   storage/        SQLAlchemy ORM (SQLite/PostgreSQL)
+
+cli/
+  helix_cli/      Standalone CLI (Typer, Rich, YAML projects)
 
 frontend/src/
   components/     React UI (shadcn/ui, Radix primitives)
@@ -208,6 +229,7 @@ Scores are aggregated with tier multipliers: Critical (5x), Normal (1x), Low (0.
 
 ## Documentation
 
+- [CLI Guide](cli/README.md) -- standalone CLI installation, commands, and YAML file format
 - [Setup Guide](docs/SETUP.md) -- detailed installation, Docker, and deployment instructions
 - [Configuration](docs/CONFIGURATION.md) -- environment variables, model roles, and Settings UI
 - [Import & Export Formats](docs/IMPORT_EXPORT.md) -- JSON/YAML schemas for test cases and personas
