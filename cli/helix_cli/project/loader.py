@@ -14,9 +14,21 @@ from api.config.models import GeneConfig, GenerationConfig
 from api.dataset.models import PriorityTier, TestCase
 from api.evolution.models import EvolutionConfig
 from api.registry.models import PromptRecord, VariableDefinition
-from api.registry.service import _extract_anchor_variables
 
 _jinja_env = Environment()
+
+
+def _extract_anchor_variables(variable_defs: list[VariableDefinition]) -> set[str]:
+    """Extract anchor variable names, including dot-notation for nested anchors."""
+    anchors: set[str] = set()
+    for v in variable_defs:
+        if v.is_anchor:
+            anchors.add(v.name)
+        if v.items_schema:
+            for sub in v.items_schema:
+                if sub.is_anchor:
+                    anchors.add(f"{v.name}.{sub.name}")
+    return anchors
 
 
 def load_prompt(prompt_dir: Path) -> PromptRecord:
