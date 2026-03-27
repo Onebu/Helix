@@ -68,18 +68,16 @@ def scaffold_config_yaml() -> str:
     return """\
 # Helix Evolution Configuration
 # Values here override GENE_* environment variables.
+# Run 'helix setup' to configure your API key.
 
-# Model/provider settings
-models:
-  meta:
-    provider: gemini               # gemini | openrouter | openai
-    model: gemini-2.5-flash
-  target:
-    provider: gemini
-    model: gemini-2.5-flash
-  judge:
-    provider: gemini
-    model: gemini-2.5-flash
+# Default provider and model (applies to all roles)
+provider: gemini                   # gemini | openai | openrouter
+model: gemini-2.5-flash
+
+# Override per role (optional):
+# models:
+#   meta:
+#     model: gemini-2.5-pro        # use a stronger model for critique
 
 # Evolution hyperparameters
 evolution:

@@ -43,7 +43,15 @@ If `helix` isn't on your PATH, use the full path to the venv binary:
 
 ### Configure API key
 
-Create a `.env` file in your working directory (or set environment variables):
+The easiest way:
+
+```bash
+helix setup
+```
+
+This walks you through selecting a provider (Gemini, OpenAI, or OpenRouter) and saves your API key to `.env`.
+
+Or manually create a `.env` file:
 
 ```bash
 # Choose at least one provider
@@ -74,6 +82,26 @@ helix accept customer-support
 ```
 
 ## Commands
+
+### `helix setup`
+
+Interactive first-run configuration. Selects a provider, saves your API key to `.env`.
+
+```bash
+helix setup
+```
+
+Providers: **Gemini**, **OpenAI**, **OpenRouter**.
+
+### `helix models [provider]`
+
+List available models for a provider.
+
+```bash
+helix models                   # list providers
+helix models gemini            # list Gemini models
+helix models openrouter --json # JSON output
+```
 
 ### `helix init <prompt-id>`
 
@@ -371,18 +399,15 @@ A fitness score of **0.0** means all cases pass. Negative scores indicate failur
 Configures models, providers, and evolution hyperparameters. All fields are optional and override environment variables.
 
 ```yaml
-# Model configuration per role
+# Simplified: one provider and model for all roles
+provider: gemini                        # gemini | openai | openrouter
+model: gemini-2.5-flash
+
+# Override specific roles (optional):
 models:
-  meta:                                 # generates critique & refinement
-    provider: gemini                    # gemini | openrouter | openai
-    model: gemini-2.5-pro
+  meta:
+    model: gemini-2.5-pro               # use a stronger model for critique
     thinking_budget: -1                 # Gemini-specific (-1 = dynamic)
-  target:                               # evaluates prompts against test cases
-    provider: gemini
-    model: gemini-2.5-flash
-  judge:                                # scores evaluation results
-    provider: gemini
-    model: gemini-2.5-flash
 
 # Evolution hyperparameters
 evolution:

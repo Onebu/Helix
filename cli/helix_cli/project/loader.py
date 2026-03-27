@@ -122,8 +122,21 @@ def load_config(
     if config_file.exists():
         yaml_data = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
 
-    # Build GeneConfig overrides from YAML models section
+    # Build GeneConfig overrides from YAML
+    # Supports both simplified (top-level provider/model) and per-role (models.meta, etc.)
     gene_overrides: dict = {}
+
+    # Simplified format: top-level provider/model applies to all roles
+    default_provider = yaml_data.get("provider")
+    default_model = yaml_data.get("model")
+    if default_provider:
+        for role in ("meta", "target", "judge"):
+            gene_overrides[f"{role}_provider"] = default_provider
+    if default_model:
+        for role in ("meta", "target", "judge"):
+            gene_overrides[f"{role}_model"] = default_model
+
+    # Per-role overrides (takes precedence over defaults)
     models_cfg = yaml_data.get("models", {})
     for role in ("meta", "target", "judge"):
         role_cfg = models_cfg.get(role, {})

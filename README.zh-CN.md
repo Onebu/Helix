@@ -24,7 +24,7 @@ Helix 自带 Web 界面，支持配置管理、实时监控进化过程，也能
 - **RCC 对话优化**：批评者找问题，作者改提示词，多轮迭代
 - **段落级结构变异**，自动保留 `{{ 模板变量 }}`
 - **分层回归测试**：关键 / 普通 / 低三个优先级
-- **多 LLM 支持**：Gemini、OpenAI、OpenRouter、Anthropic 一键切换
+- **多 LLM 支持**：Gemini、OpenAI、OpenRouter 一键切换
 - **实时监控**：通过 WebSocket 将进化过程推送至浏览器
 - **交互式 Playground**：直接和优化后的提示词聊天测试
 - **工具调用模拟**：LLM 自动生成 mock 响应
@@ -47,7 +47,7 @@ Helix 自带 Web 界面，支持配置管理、实时监控进化过程，也能
 - Node.js 22+
 - [uv](https://docs.astral.sh/uv/)（Python 包管理器）
 - npm
-- 至少一个 LLM 提供商的 API 密钥（Gemini、OpenAI、OpenRouter 或 Anthropic）
+- 至少一个 LLM 提供商的 API 密钥（Gemini、OpenAI 或 OpenRouter）
 
 ### 1. 克隆仓库
 
@@ -218,7 +218,7 @@ frontend/src/
 
 - **后端**：Python 3.13、FastAPI、Pydantic、SQLAlchemy（异步）、Jinja2
 - **前端**：React 19、TypeScript、Vite、Tailwind CSS v4、shadcn/ui、Recharts、D3
-- **LLM 提供商**：Google Gemini、OpenAI、OpenRouter、Anthropic（通过 AsyncOpenAI）
+- **LLM 提供商**：Google Gemini、OpenAI、OpenRouter（通过 AsyncOpenAI）
 - **数据库**：SQLite（默认）或 PostgreSQL
 - **部署**：Docker Compose、Vercel（前端）、Railway/Fly.io（后端）
 

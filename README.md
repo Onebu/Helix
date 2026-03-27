@@ -24,7 +24,7 @@ Helix includes a web dashboard for configuration, real-time monitoring during ev
 - RCC: multi-turn critic-author dialogue for targeted prompt refinement
 - Section-aware structural mutation preserving template variables
 - Tiered regression testing (critical / normal / low priority)
-- Multi-provider LLM support (Gemini, OpenAI, OpenRouter, Anthropic) via single AsyncOpenAI client
+- Multi-provider LLM support (Gemini, OpenAI, OpenRouter) via single AsyncOpenAI client
 - Real-time evolution monitoring via WebSocket
 - Interactive playground for prompt testing with chat streaming
 - LLM-powered tool response mocking with format guides
@@ -48,7 +48,7 @@ Helix includes a web dashboard for configuration, real-time monitoring during ev
 - Node.js 22+
 - [uv](https://docs.astral.sh/uv/) (Python package manager)
 - npm
-- An API key for at least one LLM provider (Gemini, OpenAI, OpenRouter, or Anthropic)
+- An API key for at least one LLM provider (Gemini, OpenAI, or OpenRouter)
 
 ### 1. Clone the repository
 
@@ -240,7 +240,7 @@ Scores are aggregated with tier multipliers: Critical (5x), Normal (1x), Low (0.
 
 - **Backend**: Python 3.13, FastAPI, Pydantic, SQLAlchemy (async), Jinja2
 - **Frontend**: React 19, TypeScript, Vite, Tailwind CSS v4, shadcn/ui, Recharts, D3
-- **LLM Providers**: Google Gemini, OpenAI, OpenRouter, Anthropic (via AsyncOpenAI)
+- **LLM Providers**: Google Gemini, OpenAI, OpenRouter (via AsyncOpenAI)
 - **Database**: SQLite (default) or PostgreSQL
 - **Deployment**: Docker Compose, Vercel (frontend), Railway/Fly.io (backend)
 

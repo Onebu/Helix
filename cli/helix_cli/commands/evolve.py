@@ -60,8 +60,9 @@ def evolve_command(
         key_field = f"{provider}_api_key" if provider != "openai" else "openai_api_key"
         if not getattr(config, key_field, None):
             console.print(
-                f"[red]Missing API key for {provider} ({role} role). "
-                f"Set GENE_{key_field.upper()} in .env or environment.[/red]"
+                f"[red]Missing API key for {provider} ({role} role).[/red]\n"
+                f"[dim]Run [bold]helix setup[/bold] to configure, "
+                f"or set GENE_{key_field.upper()} in .env[/dim]"
             )
             raise typer.Exit(1)
 
