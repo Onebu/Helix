@@ -988,6 +988,10 @@ export type PromptConfigSchema = {
      * Tool Mocker Model
      */
     tool_mocker_model?: string | null;
+    /**
+     * Max Tool Steps
+     */
+    max_tool_steps?: number | null;
     generation?: GenerationConfig | null;
 };
 
@@ -1731,6 +1735,34 @@ export type UpdateTemplateRequest = {
 };
 
 /**
+ * UpdateToolsRequest
+ *
+ * Request body for updating a prompt's tool definitions.
+ */
+export type UpdateToolsRequest = {
+    /**
+     * Tools
+     */
+    tools: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+/**
+ * UpdateVariablesRequest
+ *
+ * Request body for updating a prompt's variable definitions.
+ */
+export type UpdateVariablesRequest = {
+    /**
+     * Variables
+     */
+    variables: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+/**
  * ValidationError
  */
 export type ValidationError = {
@@ -2054,6 +2086,36 @@ export type UpdateTemplateApiPromptsPromptIdTemplatePutResponses = {
 
 export type UpdateTemplateApiPromptsPromptIdTemplatePutResponse = UpdateTemplateApiPromptsPromptIdTemplatePutResponses[keyof UpdateTemplateApiPromptsPromptIdTemplatePutResponses];
 
+export type UpdateVariableDefinitionsApiPromptsPromptIdVariableDefinitionsPutData = {
+    body: UpdateVariablesRequest;
+    path: {
+        /**
+         * Prompt Id
+         */
+        prompt_id: string;
+    };
+    query?: never;
+    url: '/api/prompts/{prompt_id}/variable-definitions';
+};
+
+export type UpdateVariableDefinitionsApiPromptsPromptIdVariableDefinitionsPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateVariableDefinitionsApiPromptsPromptIdVariableDefinitionsPutError = UpdateVariableDefinitionsApiPromptsPromptIdVariableDefinitionsPutErrors[keyof UpdateVariableDefinitionsApiPromptsPromptIdVariableDefinitionsPutErrors];
+
+export type UpdateVariableDefinitionsApiPromptsPromptIdVariableDefinitionsPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: PromptSummary;
+};
+
+export type UpdateVariableDefinitionsApiPromptsPromptIdVariableDefinitionsPutResponse = UpdateVariableDefinitionsApiPromptsPromptIdVariableDefinitionsPutResponses[keyof UpdateVariableDefinitionsApiPromptsPromptIdVariableDefinitionsPutResponses];
+
 export type GetMocksApiPromptsPromptIdMocksGetData = {
     body?: never;
     path: {
@@ -2121,6 +2183,40 @@ export type UpdateMocksApiPromptsPromptIdMocksPutResponses = {
 };
 
 export type UpdateMocksApiPromptsPromptIdMocksPutResponse = UpdateMocksApiPromptsPromptIdMocksPutResponses[keyof UpdateMocksApiPromptsPromptIdMocksPutResponses];
+
+export type UpdateToolsApiPromptsPromptIdToolsPutData = {
+    body: UpdateToolsRequest;
+    path: {
+        /**
+         * Prompt Id
+         */
+        prompt_id: string;
+    };
+    query?: never;
+    url: '/api/prompts/{prompt_id}/tools';
+};
+
+export type UpdateToolsApiPromptsPromptIdToolsPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateToolsApiPromptsPromptIdToolsPutError = UpdateToolsApiPromptsPromptIdToolsPutErrors[keyof UpdateToolsApiPromptsPromptIdToolsPutErrors];
+
+export type UpdateToolsApiPromptsPromptIdToolsPutResponses = {
+    /**
+     * Response Update Tools Api Prompts  Prompt Id  Tools Put
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type UpdateToolsApiPromptsPromptIdToolsPutResponse = UpdateToolsApiPromptsPromptIdToolsPutResponses[keyof UpdateToolsApiPromptsPromptIdToolsPutResponses];
 
 export type ListVersionsApiPromptsPromptIdVersionsGetData = {
     body?: never;

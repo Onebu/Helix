@@ -59,7 +59,14 @@
     "editingTemplate": "Editando plantilla",
     "saving": "Guardando...",
     "saved": "Guardado!",
-    "failedToSaveTemplate": "Error al guardar la plantilla."
+    "failedToSaveTemplate": "Error al guardar la plantilla.",
+    "descriptionPlaceholder": "Qué representa esta variable...",
+    "anchorHint": "(preservada durante la evolución)",
+    "addSubField": "Agregar subcampo",
+    "addVariable": "Agregar variable",
+    "addTool": "Agregar herramienta",
+    "newTool": "Nueva herramienta",
+    "invalidToolJson": "JSON no válido"
   },
   "settings": {
     "title": "Configuración",
