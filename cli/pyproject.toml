@@ -1,5 +1,5 @@
 [project]
-name = "helix-cli"
+name = "helix-evolve"
 version = "0.1.0"
 description = "CLI for Helix evolutionary prompt optimization"
 readme = "README.md"

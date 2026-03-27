@@ -8,7 +8,7 @@ Helix (PyPI: `helix-engine`) — an evolutionary prompt optimization engine insp
 
 **Three interfaces share the same core engine:**
 - **Web UI** (`api/web/`) — FastAPI + React dashboard
-- **CLI** (`cli/helix_cli/`) — standalone terminal tool (`pip install helix-cli`)
+- **CLI** (`cli/helix_cli/`) — standalone terminal tool (`pip install helix-evolve`)
 - **Python API** — import `api.evolution.runner.run_evolution()` directly
 
 ## Commands
@@ -42,7 +42,7 @@ npm run lint                     # ESLint
 npm run test                     # Vitest
 ```
 
-### CLI (`cli/`, helix-cli)
+### CLI (`cli/`, helix-evolve)
 
 ```bash
 uv pip install -e cli/               # Install CLI (requires core engine)
@@ -129,7 +129,7 @@ docker compose -f docker-compose.dev.yml up      # Dev with hot reload
 
 - `helix-engine` (root `pyproject.toml`) — core engine. Deps: pydantic, jinja2, openai, tenacity. No web/DB deps.
 - `helix-engine[web]` — adds FastAPI, SQLAlchemy, aiosqlite, asyncpg for the web server.
-- `helix-cli` (`cli/pyproject.toml`) — standalone CLI. Depends on `helix-engine` + typer + rich.
+- `helix-evolve` (`cli/pyproject.toml`) — standalone CLI. Depends on `helix-engine` + typer + rich.
 - **Publishing**: Push `engine-v*` or `cli-v*` git tags to trigger PyPI publish via GitHub Actions (`.github/workflows/publish.yml`). Requires trusted publishing configured on PyPI.
 
 ## Environment

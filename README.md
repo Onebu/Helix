@@ -31,7 +31,7 @@ Helix includes a web dashboard for configuration, real-time monitoring during ev
 - Interactive lineage graph with click-to-diff
 - Multi-language UI (English, Chinese, Spanish)
 - Docker Compose for single-command deployment
-- **Standalone CLI** (`helix-cli`) for terminal-based evolution with YAML project files
+- **Standalone CLI** (`helix-evolve`) for terminal-based evolution with YAML project files
 
 ## Screenshots
 
