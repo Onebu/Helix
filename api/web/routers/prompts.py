@@ -331,6 +331,39 @@ async def create_prompt(
     return _record_to_summary(record)
 
 
+@router.delete("/{prompt_id}", status_code=204)
+async def delete_prompt(
+    prompt_id: str,
+    registry: PromptRegistry = Depends(get_registry),
+) -> None:
+    """Delete a prompt and all associated data."""
+    await registry.delete_prompt(prompt_id)
+
+
+@router.patch("/{prompt_id}", response_model=PromptSummary)
+async def update_prompt(
+    prompt_id: str,
+    body: dict,
+    registry: PromptRegistry = Depends(get_registry),
+    session: AsyncSession = Depends(get_db_session),
+) -> PromptSummary:
+    """Partially update a prompt's metadata (e.g. purpose)."""
+    result = await session.execute(
+        select(PromptModel).where(PromptModel.id == prompt_id)
+    )
+    prompt_row = result.scalar_one_or_none()
+    if not prompt_row:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+
+    if "purpose" in body:
+        prompt_row.purpose = body["purpose"]
+
+    await session.commit()
+
+    record = await registry.load_prompt(prompt_id)
+    return _record_to_summary(record)
+
+
 @router.put("/{prompt_id}/template", response_model=PromptSummary)
 async def update_template(
     prompt_id: str,

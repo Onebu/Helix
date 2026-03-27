@@ -121,7 +121,7 @@ export default function ModelRoleSelector({
             <SelectContent>
               <SelectItem value="__default__">{t('evolution.serverDefault')}</SelectItem>
               {models?.map((m) => (
-                <SelectItem key={m.id} value={m.id}>
+                <SelectItem key={m.id} value={m.id} textValue={m.name}>
                   <span className="flex items-center gap-1 w-full">
                     <span className="truncate">{m.name}</span>
                     <ModelMeta model={m} />

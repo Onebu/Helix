@@ -95,6 +95,54 @@ async def test_create_prompt_duplicate_returns_409(client: httpx.AsyncClient):
     assert resp.status_code == 409
 
 
+# -- DELETE /api/prompts/{id} --
+
+
+async def test_delete_prompt(client: httpx.AsyncClient):
+    """DELETE /api/prompts/{id} removes the prompt."""
+    await _register_prompt(client, "del-prompt")
+    resp = await client.delete("/api/prompts/del-prompt")
+    assert resp.status_code == 204
+
+    # Verify it's gone
+    resp = await client.get("/api/prompts/del-prompt")
+    assert resp.status_code == 404
+
+
+async def test_delete_prompt_not_found(client: httpx.AsyncClient):
+    """DELETE /api/prompts/nonexistent returns 404."""
+    resp = await client.delete("/api/prompts/nonexistent")
+    assert resp.status_code == 404
+
+
+# -- PATCH /api/prompts/{id} --
+
+
+async def test_update_purpose(client: httpx.AsyncClient):
+    """PATCH /api/prompts/{id} with purpose updates it."""
+    await _register_prompt(client, "patch-prompt", purpose="Old purpose")
+
+    resp = await client.patch(
+        "/api/prompts/patch-prompt",
+        json={"purpose": "New purpose"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["purpose"] == "New purpose"
+
+    # Verify via GET
+    detail = await client.get("/api/prompts/patch-prompt")
+    assert detail.json()["purpose"] == "New purpose"
+
+
+async def test_update_purpose_not_found(client: httpx.AsyncClient):
+    """PATCH /api/prompts/nonexistent returns 404."""
+    resp = await client.patch(
+        "/api/prompts/nonexistent",
+        json={"purpose": "x"},
+    )
+    assert resp.status_code == 404
+
+
 # -- PUT /api/prompts/{id}/template --
 
 

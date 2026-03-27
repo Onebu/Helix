@@ -1,9 +1,15 @@
+import { useState } from 'react'
 import { Outlet, useParams, useLocation, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { getPromptApiPromptsPromptIdGet } from '@/client/sdk.gen'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  getPromptApiPromptsPromptIdGet,
+  updatePromptApiPromptsPromptIdPatch,
+} from '@/client/sdk.gen'
 import type { PromptDetail } from '@/client/types.gen'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Pencil, Check, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 
@@ -19,6 +25,69 @@ function getActiveTab(pathname: string, promptId: string): string {
     }
   }
   return 'template'
+}
+
+function PromptHeader({ detail, promptId }: { detail: PromptDetail; promptId: string }) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const [editingPurpose, setEditingPurpose] = useState(false)
+  const [purposeDraft, setPurposeDraft] = useState('')
+
+  const savePurpose = async () => {
+    const trimmed = purposeDraft.trim()
+    if (!trimmed || trimmed === detail.purpose) {
+      setEditingPurpose(false)
+      return
+    }
+    await updatePromptApiPromptsPromptIdPatch({
+      path: { prompt_id: promptId },
+      body: { purpose: trimmed },
+    })
+    await queryClient.invalidateQueries({ queryKey: ['prompts', promptId] })
+    await queryClient.invalidateQueries({ queryKey: ['prompts'] })
+    setEditingPurpose(false)
+  }
+
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="min-w-0">
+        <h1 className="text-xl font-bold text-foreground">{detail.id}</h1>
+        {editingPurpose ? (
+          <div className="flex items-center gap-1 mt-0.5">
+            <Input
+              value={purposeDraft}
+              onChange={(e) => setPurposeDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') savePurpose(); if (e.key === 'Escape') setEditingPurpose(false) }}
+              className="h-7 text-sm"
+              autoFocus
+            />
+            <button onClick={savePurpose} className="text-primary hover:text-primary/80 p-1">
+              <Check className="h-3.5 w-3.5" />
+            </button>
+            <button onClick={() => setEditingPurpose(false)} className="text-muted-foreground hover:text-foreground p-1">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => { setPurposeDraft(detail.purpose); setEditingPurpose(true) }}
+            className="group flex items-center gap-1 mt-0.5 text-left"
+          >
+            <p className="text-sm text-muted-foreground">{detail.purpose}</p>
+            <Pencil className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground transition-opacity" />
+          </button>
+        )}
+      </div>
+      <div className="flex gap-2 shrink-0 mt-1">
+        <Badge variant="secondary" className="text-xs">
+          {t('promptLayout.vars', { count: detail.template_variables.length })}
+        </Badge>
+        <Badge variant="outline" className="text-xs">
+          {t('promptLayout.anchors', { count: detail.anchor_variables.length })}
+        </Badge>
+      </div>
+    </div>
+  )
 }
 
 export function PromptLayout() {
@@ -57,20 +126,7 @@ export function PromptLayout() {
               <Skeleton className="h-4 w-[400px]" />
             </div>
           ) : detail ? (
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h1 className="text-xl font-bold text-foreground">{detail.id}</h1>
-                <p className="text-sm text-muted-foreground mt-0.5">{detail.purpose}</p>
-              </div>
-              <div className="flex gap-2 shrink-0 mt-1">
-                <Badge variant="secondary" className="text-xs">
-                  {t('promptLayout.vars', { count: detail.template_variables.length })}
-                </Badge>
-                <Badge variant="outline" className="text-xs">
-                  {t('promptLayout.anchors', { count: detail.anchor_variables.length })}
-                </Badge>
-              </div>
-            </div>
+            <PromptHeader detail={detail} promptId={promptId} />
           ) : (
             <p className="text-muted-foreground">{t('promptLayout.notFound')}</p>
           )}

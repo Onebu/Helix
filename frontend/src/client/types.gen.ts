@@ -2026,6 +2026,36 @@ export type UpdatePromptConfigApiPromptsPromptIdConfigPutResponses = {
 
 export type UpdatePromptConfigApiPromptsPromptIdConfigPutResponse = UpdatePromptConfigApiPromptsPromptIdConfigPutResponses[keyof UpdatePromptConfigApiPromptsPromptIdConfigPutResponses];
 
+export type DeletePromptApiPromptsPromptIdDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Prompt Id
+         */
+        prompt_id: string;
+    };
+    query?: never;
+    url: '/api/prompts/{prompt_id}';
+};
+
+export type DeletePromptApiPromptsPromptIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeletePromptApiPromptsPromptIdDeleteError = DeletePromptApiPromptsPromptIdDeleteErrors[keyof DeletePromptApiPromptsPromptIdDeleteErrors];
+
+export type DeletePromptApiPromptsPromptIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeletePromptApiPromptsPromptIdDeleteResponse = DeletePromptApiPromptsPromptIdDeleteResponses[keyof DeletePromptApiPromptsPromptIdDeleteResponses];
+
 export type GetPromptApiPromptsPromptIdGetData = {
     body?: never;
     path: {
@@ -2055,6 +2085,41 @@ export type GetPromptApiPromptsPromptIdGetResponses = {
 };
 
 export type GetPromptApiPromptsPromptIdGetResponse = GetPromptApiPromptsPromptIdGetResponses[keyof GetPromptApiPromptsPromptIdGetResponses];
+
+export type UpdatePromptApiPromptsPromptIdPatchData = {
+    /**
+     * Body
+     */
+    body: {
+        [key: string]: unknown;
+    };
+    path: {
+        /**
+         * Prompt Id
+         */
+        prompt_id: string;
+    };
+    query?: never;
+    url: '/api/prompts/{prompt_id}';
+};
+
+export type UpdatePromptApiPromptsPromptIdPatchErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdatePromptApiPromptsPromptIdPatchError = UpdatePromptApiPromptsPromptIdPatchErrors[keyof UpdatePromptApiPromptsPromptIdPatchErrors];
+
+export type UpdatePromptApiPromptsPromptIdPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: PromptSummary;
+};
+
+export type UpdatePromptApiPromptsPromptIdPatchResponse = UpdatePromptApiPromptsPromptIdPatchResponses[keyof UpdatePromptApiPromptsPromptIdPatchResponses];
 
 export type UpdateTemplateApiPromptsPromptIdTemplatePutData = {
     body: UpdateTemplateRequest;
