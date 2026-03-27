@@ -15,6 +15,10 @@ from api.dataset.models import PriorityTier, TestCase
 from api.evolution.models import EvolutionConfig
 from api.registry.models import PromptRecord, VariableDefinition
 
+# PromptRecord uses forward refs (ToolSchemaDefinition, MockDefinition, PersonaProfile).
+# Importing schemas.py triggers model_rebuild() which resolves them.
+import api.registry.schemas  # noqa: F401
+
 _jinja_env = Environment()
 
 
