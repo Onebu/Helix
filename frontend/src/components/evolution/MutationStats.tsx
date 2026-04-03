@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useMemo } from 'react'
 import type { LineageNode, MutationStat } from '../../types/evolution'
-import { MUTATION_COLORS } from '../../types/evolution'
+import { mutationBg, mutationColor, SCORE_POSITIVE, SCORE_NEGATIVE, SCORE_NEUTRAL } from '../../types/evolution'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 
 interface MutationStatsProps {
@@ -89,7 +89,7 @@ export default function MutationStats({ lineageEvents }: MutationStatsProps) {
                 title={`${mtype}: ${s.count} (${pct.toFixed(1)}%)`}
                 style={{
                   width: `${pct}%`,
-                  backgroundColor: MUTATION_COLORS[mtype] ?? '#64748b',
+                  backgroundColor: mutationColor(mtype),
                 }}
               />
             )
@@ -101,7 +101,7 @@ export default function MutationStats({ lineageEvents }: MutationStatsProps) {
               <span
                 className="inline-block h-2 w-2 rounded-full"
                 style={{
-                  backgroundColor: MUTATION_COLORS[mtype] ?? '#64748b',
+                  backgroundColor: mutationColor(mtype),
                 }}
               />
               {mtype}: {s.count}
@@ -127,10 +127,10 @@ export default function MutationStats({ lineageEvents }: MutationStatsProps) {
               const rate = s.count > 0 ? (s.improved / s.count) * 100 : 0
               const deltaColor =
                 s.avgDelta > 0
-                  ? '#22c55e'
+                  ? SCORE_POSITIVE
                   : s.avgDelta < 0
-                    ? '#ef4444'
-                    : '#94a3b8'
+                    ? SCORE_NEGATIVE
+                    : SCORE_NEUTRAL
 
               return (
                 <TableRow key={mtype}>
@@ -138,8 +138,8 @@ export default function MutationStats({ lineageEvents }: MutationStatsProps) {
                     <span
                       className="inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold"
                       style={{
-                        background: `${MUTATION_COLORS[mtype] ?? '#64748b'}22`,
-                        color: MUTATION_COLORS[mtype] ?? '#64748b',
+                        background: mutationBg(mtype),
+                        color: mutationColor(mtype),
                       }}
                     >
                       {mtype}

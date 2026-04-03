@@ -125,7 +125,7 @@ export default function VersionHistory({ promptId }: VersionHistoryProps) {
                 type="checkbox"
                 checked={selectedForDiff.has(ver.version)}
                 onChange={() => toggleDiffSelection(ver.version)}
-                className="h-4 w-4 rounded border-border bg-secondary text-emerald-500 focus:ring-emerald-500/50"
+                className="h-4 w-4 rounded border-border bg-secondary text-success focus:ring-success/50"
                 title="Select for diff comparison"
               />
             )}
@@ -137,7 +137,7 @@ export default function VersionHistory({ promptId }: VersionHistoryProps) {
 
             {/* Active badge */}
             {ver.is_active && (
-              <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+              <Badge className="bg-success/10 text-success border-success/20">
                 Active
               </Badge>
             )}
@@ -161,7 +161,7 @@ export default function VersionHistory({ promptId }: VersionHistoryProps) {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="text-xs text-emerald-400 hover:text-emerald-300"
+                  className="text-xs text-success hover:text-success/80"
                   onClick={() => activateMutation.mutate(ver.version)}
                   disabled={activateMutation.isPending}
                 >

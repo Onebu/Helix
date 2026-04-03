@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { useMemo, useState } from 'react'
 import { createTwoFilesPatch } from 'diff'
 import type { LineageNode } from '../../types/evolution'
-import { COLORS, MUTATION_COLORS } from '../../types/evolution'
+import { mutationBg, mutationColor } from '../../types/evolution'
 import { traceWinningPath, detectIslandTransitions } from '../../lib/lineage-utils'
 import { parsePatchLines } from '../../lib/diff-utils'
 import type { DiffLine } from '../../lib/diff-utils'
@@ -122,7 +122,7 @@ export default function DiffViewer({
   if (nodesWithTemplates.length < 2) {
     return (
       <div className="rounded-lg border border-border bg-card/50 p-8 text-center">
-        <p style={{ color: COLORS.textMuted }}>{t('evolution.noDiffData')}</p>
+        <p className="text-muted-foreground">{t('evolution.noDiffData')}</p>
       </div>
     )
   }
@@ -140,15 +140,13 @@ export default function DiffViewer({
             <span
               className="text-xs px-2 py-0.5 rounded-full"
               style={{
-                backgroundColor:
-                  (MUTATION_COLORS[seedNode.mutationType] ?? COLORS.textMuted) + '22',
-                color:
-                  MUTATION_COLORS[seedNode.mutationType] ?? COLORS.textMuted,
+                backgroundColor: mutationBg(seedNode.mutationType),
+                color: mutationColor(seedNode.mutationType),
               }}
             >
               {seedNode.mutationType}
             </span>
-            <span className="text-emerald-400 font-bold ml-auto">
+            <span className="text-score-positive font-bold ml-auto">
               {seedNode.fitnessScore.toFixed(3)}
             </span>
           </div>
@@ -176,7 +174,7 @@ export default function DiffViewer({
         return (
           <div key={step.childId} className="space-y-2">
             {transitionMap.has(step.childId) && (
-              <div className="flex items-center gap-2 px-4 py-2 text-xs text-purple-400 bg-purple-500/10 rounded-lg border border-purple-500/20">
+              <div className="flex items-center gap-2 px-4 py-2 text-xs text-mutation-fresh bg-mutation-fresh/10 rounded-lg border border-mutation-fresh/20">
                 <span>Migrated from Island {transitionMap.get(step.childId)!.fromIsland}</span>
                 <span className="text-muted-foreground">&rarr;</span>
                 <span>Island {transitionMap.get(step.childId)!.toIsland}</span>
@@ -194,20 +192,17 @@ export default function DiffViewer({
               <span
                 className="text-xs px-2 py-0.5 rounded-full"
                 style={{
-                  backgroundColor:
-                    (MUTATION_COLORS[step.mutationType] ?? COLORS.textMuted) +
-                    '22',
-                  color:
-                    MUTATION_COLORS[step.mutationType] ?? COLORS.textMuted,
+                  backgroundColor: mutationBg(step.mutationType),
+                  color: mutationColor(step.mutationType),
                 }}
               >
                 {step.mutationType}
               </span>
-              <span className="text-emerald-400 font-bold ml-auto">
+              <span className="text-score-positive font-bold ml-auto">
                 {step.childFitness.toFixed(3)}
               </span>
               <span
-                className={`text-xs font-mono ${delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}
+                className={`text-xs font-mono ${delta >= 0 ? 'text-score-positive' : 'text-score-negative'}`}
               >
                 {delta >= 0 ? '+' : ''}
                 {delta.toFixed(3)}
@@ -222,7 +217,7 @@ export default function DiffViewer({
                     <div
                       key={j}
                       data-diff-type="hunk"
-                      className="text-blue-400 mt-2 mb-1"
+                      className="text-diff-hunk mt-2 mb-1"
                     >
                       {line.content}
                     </div>
@@ -233,7 +228,7 @@ export default function DiffViewer({
                     <div
                       key={j}
                       data-diff-type="add"
-                      className="text-emerald-400 bg-emerald-500/5"
+                      className="text-diff-add bg-diff-add-bg"
                     >
                       +{line.content}
                     </div>
@@ -244,7 +239,7 @@ export default function DiffViewer({
                     <div
                       key={j}
                       data-diff-type="del"
-                      className="text-red-400 bg-red-500/5 line-through opacity-70"
+                      className="text-diff-del bg-diff-del-bg line-through opacity-70"
                     >
                       -{line.content}
                     </div>

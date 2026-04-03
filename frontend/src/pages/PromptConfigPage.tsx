@@ -89,10 +89,10 @@ const CONFIG_PRESETS: Record<string, Preset> = {
 // --- Role icon mapping (text comes from t()) ---
 
 const ROLE_ICONS: Record<'meta' | 'target' | 'judge' | 'tool_mocker', React.ReactNode> = {
-  meta: <Zap className="h-4 w-4 text-amber-500" />,
-  target: <Target className="h-4 w-4 text-blue-500" />,
-  judge: <Scale className="h-4 w-4 text-purple-500" />,
-  tool_mocker: <Wrench className="h-4 w-4 text-green-500" />,
+  meta: <Zap className="h-4 w-4 text-warning" />,
+  target: <Target className="h-4 w-4 text-info" />,
+  judge: <Scale className="h-4 w-4 text-mutation-fresh" />,
+  tool_mocker: <Wrench className="h-4 w-4 text-success" />,
 }
 
 const ROLE_DEFAULT_FOR: Record<string, string> = {
@@ -557,7 +557,7 @@ export default function PromptConfigPage() {
           <div
             className={`px-4 py-3 text-sm border-t ${
               statusBanner.type === 'success'
-                ? 'bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20'
+                ? 'bg-success/10 text-success border-success/20'
                 : 'bg-destructive/10 text-destructive border-destructive/20'
             }`}
           >
@@ -1047,7 +1047,7 @@ function FormatGuideToolSection({
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-foreground font-mono">{toolName}</span>
         {!hasSavedExamples && (
-          <span className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+          <span className="flex items-center gap-1 text-xs text-warning">
             <AlertTriangle className="h-3 w-3" />
             {t('config.noExamples')}
           </span>
@@ -1074,7 +1074,7 @@ function FormatGuideToolSection({
                 rows={3}
                 className={`font-mono text-xs flex-1 ${
                   hasContent && !valid
-                    ? 'border-red-500 focus-visible:ring-red-500'
+                    ? 'border-destructive focus-visible:ring-destructive'
                     : ''
                 }`}
               />
@@ -1093,7 +1093,7 @@ function FormatGuideToolSection({
           )
         })}
         {examples.some((ex) => ex.trim() !== '' && !isValidJson(ex.trim())) && (
-          <p className="text-xs text-red-500">{t('config.invalidJson')}</p>
+          <p className="text-xs text-destructive">{t('config.invalidJson')}</p>
         )}
       </div>
 
@@ -1130,10 +1130,10 @@ function FormatGuideToolSection({
           </Button>
         )}
         {saveSuccess && (
-          <span className="text-xs text-green-600 dark:text-green-400">{t('config.saved')}</span>
+          <span className="text-xs text-success">{t('config.saved')}</span>
         )}
         {saveError && (
-          <span className="text-xs text-red-500">{saveError}</span>
+          <span className="text-xs text-destructive">{saveError}</span>
         )}
       </div>
 
@@ -1172,7 +1172,7 @@ function FormatGuideToolSection({
           </pre>
         )}
         {sampleError && (
-          <p className="text-xs text-red-500">{sampleError}</p>
+          <p className="text-xs text-destructive">{sampleError}</p>
         )}
       </div>
     </div>

@@ -40,8 +40,8 @@ function ToolCallBlock({ message }: { message: ChatMessage }) {
   const args = tc.arguments
   const hasArgs = Object.keys(args).length > 0
   return (
-    <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-mono">
-      <div className="flex items-center gap-1.5 text-amber-400 mb-1">
+    <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs font-mono">
+      <div className="flex items-center gap-1.5 text-warning mb-1">
         <span className="text-[10px] font-semibold uppercase tracking-wider">Tool Call</span>
       </div>
       <div className="text-foreground font-semibold">{tc.name}()</div>
@@ -57,8 +57,8 @@ function ToolCallBlock({ message }: { message: ChatMessage }) {
 function ToolResultBlock({ message }: { message: ChatMessage }) {
   const tr = message.toolResult!
   return (
-    <div className="rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-xs font-mono">
-      <div className="flex items-center gap-1.5 text-blue-400 mb-1">
+    <div className="rounded-md border border-info/30 bg-info/10 px-3 py-2 text-xs font-mono">
+      <div className="flex items-center gap-1.5 text-info mb-1">
         <span className="text-[10px] font-semibold uppercase tracking-wider">Tool Result</span>
         <span className="text-muted-foreground">{tr.name}</span>
       </div>

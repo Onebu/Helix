@@ -81,7 +81,7 @@ export function CaseImport({ promptId, open, onOpenChange }: CaseImportProps) {
 
         {importedCount !== null ? (
           <div className="text-center py-4">
-            <p className="text-emerald-400 text-sm mb-4">
+            <p className="text-success text-sm mb-4">
               {t('datasets.importSuccess', { count: importedCount })}
             </p>
             <Button onClick={handleClose}>{t('datasets.done')}</Button>

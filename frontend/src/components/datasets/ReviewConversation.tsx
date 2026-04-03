@@ -43,7 +43,7 @@ function truncate(text: string, max: number): string {
 
 function scoreColor(passed: boolean | null): string {
   if (passed === null) return 'bg-muted text-muted-foreground'
-  return passed ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+  return passed ? 'bg-success/10 text-success border-success/30' : 'bg-warning/10 text-warning border-warning/30'
 }
 
 export function ReviewConversation({
@@ -300,7 +300,7 @@ export function ReviewConversation({
                 <Button
                   variant="outline"
                   size="sm"
-                  className="text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
+                  className="text-success border-success/30 hover:bg-success/10"
                   onClick={() => onApprove(index)}
                 >
                   <Check className="h-3.5 w-3.5 mr-1" />
@@ -323,7 +323,7 @@ export function ReviewConversation({
             )}
             {decision === 'approved' && (
               <>
-                <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
+                <Badge className="bg-success/10 text-success border-success/30">
                   {t('datasets.approved')}
                 </Badge>
                 <button

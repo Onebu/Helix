@@ -176,14 +176,14 @@ export default function RunConfigForm({ promptId: propPromptId, onRunStarted }: 
 
   if (successResult) {
     return (
-      <Card className="border-emerald-500/30">
+      <Card className="border-success/30">
         <CardContent className="pt-6">
-          <h3 className="text-lg font-semibold text-emerald-400 mb-2">{t('evolution.evolutionStarted')}</h3>
+          <h3 className="text-lg font-semibold text-success mb-2">{t('evolution.evolutionStarted')}</h3>
           <p className="text-foreground mb-1">
-            {t('evolution.runIdLabel')} <span className="font-mono text-emerald-400" data-testid="run-id">{successResult.run_id}</span>
+            {t('evolution.runIdLabel')} <span className="font-mono text-success" data-testid="run-id">{successResult.run_id}</span>
           </p>
           <p className="text-muted-foreground mb-4">
-            {t('evolution.statusLabel')} <span className="text-emerald-400">{successResult.status}</span>
+            {t('evolution.statusLabel')} <span className="text-success">{successResult.status}</span>
           </p>
           <div className="flex gap-3">
             <Button variant="secondary" asChild>

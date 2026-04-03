@@ -22,13 +22,13 @@ function StatusBadge({ status }: { status: string }) {
   switch (status) {
     case 'completed':
       return (
-        <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+        <Badge className="bg-success/10 text-success border-success/20">
           {label}
         </Badge>
       )
     case 'running':
       return (
-        <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20">
+        <Badge className="bg-info/10 text-info border-info/20">
           {label}
         </Badge>
       )
@@ -170,7 +170,7 @@ export default function RunHistoryTable({ promptId: propPromptId }: RunHistoryTa
               onClick={() => {
                 navigate(`/prompts/${run.prompt_id}/evolution?run=${run.run_id}`)
               }}
-              className="flex items-center gap-3 rounded-lg border border-blue-500/30 bg-blue-500/5 px-4 py-3 cursor-pointer hover:bg-blue-500/10 transition-colors"
+              className="flex items-center gap-3 rounded-lg border border-info/30 bg-info/5 px-4 py-3 cursor-pointer hover:bg-info/10 transition-colors"
             >
               <StatusBadge status={run.status} />
               <span className="font-mono text-xs text-foreground">{run.run_id.slice(0, 8)}</span>

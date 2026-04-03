@@ -200,7 +200,7 @@ function VariableSchemaRow({ varDef }: { varDef: VariableDefinition }) {
         {varDef.is_anchor && (
           <Badge
             variant="outline"
-            className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-xs"
+            className="bg-success/20 text-success border-success/30 text-xs"
           >
             {t('prompts.anchor')}
           </Badge>
@@ -225,7 +225,7 @@ function VariableSchemaRow({ varDef }: { varDef: VariableDefinition }) {
               {subField.is_anchor && (
                 <Badge
                   variant="outline"
-                  className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-xs"
+                  className="bg-success/20 text-success border-success/30 text-xs"
                 >
                   {t('prompts.anchor')}
                 </Badge>
@@ -591,7 +591,7 @@ function ToolCard({ tool, index }: { tool: Tool; index: number }) {
                 {required.has(paramName) && (
                   <Badge
                     variant="outline"
-                    className="text-xs py-0 text-amber-400 border-amber-500/30 bg-amber-500/10"
+                    className="text-xs py-0 text-warning border-warning/30 bg-warning/10"
                   >
                     {t('prompts.required')}
                   </Badge>

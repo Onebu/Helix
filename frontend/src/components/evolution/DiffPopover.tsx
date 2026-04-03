@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useMemo } from 'react'
 import type { LineageNode } from '../../types/evolution'
-import { MUTATION_COLORS, COLORS } from '../../types/evolution'
+import { mutationBg, mutationColor } from '../../types/evolution'
 import { computePairDiff, computePopoverPosition } from '../../lib/diff-utils'
 import type { DiffLine } from '../../lib/diff-utils'
 
@@ -16,16 +16,16 @@ interface DiffPopoverProps {
 
 function DiffLineRow({ line }: { line: DiffLine }) {
   if (line.type === 'hunk') {
-    return <div className="text-blue-400 mt-1 mb-0.5">{line.content}</div>
+    return <div className="text-diff-hunk mt-1 mb-0.5">{line.content}</div>
   }
   if (line.type === 'add') {
     return (
-      <div className="text-emerald-400 bg-emerald-500/5">+{line.content}</div>
+      <div className="text-diff-add bg-diff-add-bg">+{line.content}</div>
     )
   }
   if (line.type === 'del') {
     return (
-      <div className="text-red-400 bg-red-500/5 line-through opacity-70">
+      <div className="text-diff-del bg-diff-del-bg line-through opacity-70">
         -{line.content}
       </div>
     )
@@ -64,7 +64,7 @@ export function DiffPopover({
   if (!candidate || candidate.template === undefined) {
     return (
       <div
-        className="absolute pointer-events-none w-[400px] h-[300px] bg-background border border-border rounded-lg shadow-xl z-30 flex items-center justify-center"
+        className="absolute pointer-events-none w-[min(400px,calc(100vw-2rem))] h-[300px] bg-background border border-border rounded-lg shadow-xl z-30 flex items-center justify-center"
         style={{ left: `${left}px`, top: `${top}px` }}
       >
         <p className="text-muted-foreground text-sm">{t('evolution.noTemplateData')}</p>
@@ -76,7 +76,7 @@ export function DiffPopover({
   if (diffResult?.type === 'seed') {
     return (
       <div
-        className="absolute pointer-events-none w-[400px] h-[300px] bg-background border border-border rounded-lg shadow-xl z-30 flex flex-col overflow-hidden"
+        className="absolute pointer-events-none w-[min(400px,calc(100vw-2rem))] h-[300px] bg-background border border-border rounded-lg shadow-xl z-30 flex flex-col overflow-hidden"
         style={{ left: `${left}px`, top: `${top}px` }}
       >
         <div className="flex items-center gap-2 px-3 py-2 bg-muted border-b border-border shrink-0">
@@ -86,14 +86,13 @@ export function DiffPopover({
           <span
             className="text-[10px] px-1.5 py-0.5 rounded-full"
             style={{
-              backgroundColor:
-                (MUTATION_COLORS[candidate.mutationType] ?? COLORS.textMuted) + '22',
-              color: MUTATION_COLORS[candidate.mutationType] ?? COLORS.textMuted,
+              backgroundColor: mutationBg(candidate.mutationType),
+              color: mutationColor(candidate.mutationType),
             }}
           >
             {candidate.mutationType}
           </span>
-          <span className="text-emerald-400 font-bold text-xs ml-auto">
+          <span className="text-score-positive font-bold text-xs ml-auto">
             {candidate.fitnessScore.toFixed(3)}
           </span>
         </div>
@@ -110,7 +109,7 @@ export function DiffPopover({
   if (diffResult?.type === 'no-parent' || diffResult?.type === 'no-parent-template') {
     return (
       <div
-        className="absolute pointer-events-none w-[400px] h-[300px] bg-background border border-border rounded-lg shadow-xl z-30 flex items-center justify-center"
+        className="absolute pointer-events-none w-[min(400px,calc(100vw-2rem))] h-[300px] bg-background border border-border rounded-lg shadow-xl z-30 flex items-center justify-center"
         style={{ left: `${left}px`, top: `${top}px` }}
       >
         <p className="text-muted-foreground text-sm">{t('evolution.parentTemplateNotAvailable')}</p>
@@ -126,7 +125,7 @@ export function DiffPopover({
 
     return (
       <div
-        className="absolute pointer-events-none w-[400px] h-[300px] bg-background border border-border rounded-lg shadow-xl z-30 flex flex-col overflow-hidden"
+        className="absolute pointer-events-none w-[min(400px,calc(100vw-2rem))] h-[300px] bg-background border border-border rounded-lg shadow-xl z-30 flex flex-col overflow-hidden"
         style={{ left: `${left}px`, top: `${top}px` }}
       >
         {/* Header */}
@@ -137,14 +136,13 @@ export function DiffPopover({
           <span
             className="text-[10px] px-1.5 py-0.5 rounded-full"
             style={{
-              backgroundColor:
-                (MUTATION_COLORS[candidate.mutationType] ?? COLORS.textMuted) + '22',
-              color: MUTATION_COLORS[candidate.mutationType] ?? COLORS.textMuted,
+              backgroundColor: mutationBg(candidate.mutationType),
+              color: mutationColor(candidate.mutationType),
             }}
           >
             {candidate.mutationType}
           </span>
-          <span className="text-emerald-400 font-bold text-xs">
+          <span className="text-score-positive font-bold text-xs">
             {candidate.fitnessScore.toFixed(3)}
           </span>
           {(addCount > 0 || delCount > 0) && (

@@ -43,6 +43,25 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --font-sans: 'DM Sans', system-ui, sans-serif;
+
+  /* Evolution semantic colors */
+  --color-diff-add: var(--diff-add);
+  --color-diff-add-bg: var(--diff-add-bg);
+  --color-diff-del: var(--diff-del);
+  --color-diff-del-bg: var(--diff-del-bg);
+  --color-diff-hunk: var(--diff-hunk);
+  --color-score-positive: var(--score-positive);
+  --color-score-negative: var(--score-negative);
+  --color-score-neutral: var(--score-neutral);
+  --color-mutation-rcc: var(--mutation-rcc);
+  --color-mutation-structural: var(--mutation-structural);
+  --color-mutation-fresh: var(--mutation-fresh);
+  --color-mutation-migrated: var(--mutation-migrated);
+  --color-mutation-reset: var(--mutation-reset);
+  --color-mutation-seed: var(--mutation-seed);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
 }
 
 /*
@@ -85,6 +104,31 @@
   --sidebar-accent-foreground: oklch(0.25 0.02 155);
   --sidebar-border: oklch(0.15 0.015 155 / 10%);
   --sidebar-ring: oklch(0.6 0.19 155);
+
+  /* Diff colors (darker shades for light backgrounds) */
+  --diff-add: oklch(0.5 0.14 155);
+  --diff-add-bg: oklch(0.5 0.14 155 / 8%);
+  --diff-del: oklch(0.55 0.18 25);
+  --diff-del-bg: oklch(0.55 0.18 25 / 8%);
+  --diff-hunk: oklch(0.55 0.12 250);
+
+  /* Score feedback */
+  --score-positive: #22c55e;
+  --score-negative: #ef4444;
+  --score-neutral: #94a3b8;
+
+  /* Semantic state colors */
+  --success: oklch(0.6 0.19 155);
+  --warning: #f59e0b;
+  --info: #3b82f6;
+
+  /* Mutation type colors (categorical, theme-independent) */
+  --mutation-rcc: #22c55e;
+  --mutation-structural: #f59e0b;
+  --mutation-fresh: #8b5cf6;
+  --mutation-migrated: #3b82f6;
+  --mutation-reset: #ef4444;
+  --mutation-seed: #94a3b8;
 }
 
 /* ── Dark mode ── */
@@ -120,6 +164,18 @@
   --sidebar-accent-foreground: oklch(0.96 0.006 155);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.65 0.19 155);
+
+  /* Diff colors (lighter shades for dark backgrounds) */
+  --diff-add: oklch(0.75 0.14 155);
+  --diff-add-bg: oklch(0.75 0.14 155 / 5%);
+  --diff-del: oklch(0.72 0.15 25);
+  --diff-del-bg: oklch(0.72 0.15 25 / 5%);
+  --diff-hunk: oklch(0.72 0.12 250);
+
+  /* Semantic state colors (dark mode variants) */
+  --success: oklch(0.65 0.19 155);
+  --warning: #f59e0b;
+  --info: #60a5fa;
 }
 
 @layer base {

@@ -31,28 +31,28 @@ function ScorerFlags({ expectedOutput }: { expectedOutput: Record<string, unknow
   const flags: React.ReactNode[] = []
   if (expectedOutput.require_content === true) {
     flags.push(
-      <Badge key="rc" variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20" title="Require Content — response must not be empty">
+      <Badge key="rc" variant="outline" className="bg-success/10 text-success border-success/20" title="Require Content — response must not be empty">
         RC
       </Badge>
     )
   }
   if (expectedOutput.match_args != null) {
     flags.push(
-      <Badge key="ma" variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/20" title="Match Args — response must call the expected tool">
+      <Badge key="ma" variant="outline" className="bg-info/10 text-info border-info/20" title="Match Args — response must call the expected tool">
         MA
       </Badge>
     )
   }
   if (expectedOutput.must_contain != null) {
     flags.push(
-      <Badge key="mc" variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/20" title="Must Contain — response must include specific text">
+      <Badge key="mc" variant="outline" className="bg-warning/10 text-warning border-warning/20" title="Must Contain — response must include specific text">
         MC
       </Badge>
     )
   }
   if (expectedOutput.behavior_criteria != null) {
     flags.push(
-      <Badge key="bj" variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-500/20" title="Behavior Judge — LLM evaluates against criteria">
+      <Badge key="bj" variant="outline" className="bg-mutation-fresh/10 text-mutation-fresh border-mutation-fresh/20" title="Behavior Judge — LLM evaluates against criteria">
         BJ
       </Badge>
     )

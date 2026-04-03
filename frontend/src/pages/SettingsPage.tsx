@@ -77,9 +77,9 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
 
 // Role icon mapping (only icons -- titles/descriptions come from t())
 const ROLE_ICONS: Record<RoleName, React.ReactNode> = {
-  meta: <Zap className="h-5 w-5 text-amber-500" />,
-  target: <Target className="h-5 w-5 text-blue-500" />,
-  judge: <Scale className="h-5 w-5 text-purple-500" />,
+  meta: <Zap className="h-5 w-5 text-warning" />,
+  target: <Target className="h-5 w-5 text-info" />,
+  judge: <Scale className="h-5 w-5 text-mutation-fresh" />,
 }
 
 // --- API helpers ---
@@ -439,7 +439,7 @@ export default function SettingsPage() {
                 {providerTestStatus?.result && (
                   <div className="shrink-0">
                     {providerTestStatus.result.success ? (
-                      <CheckCircle2 className="h-5 w-5 text-green-500" />
+                      <CheckCircle2 className="h-5 w-5 text-success" />
                     ) : (
                       <span className="flex items-center gap-1 text-xs text-destructive">
                         <XCircle className="h-5 w-5" />
@@ -540,7 +540,7 @@ export default function SettingsPage() {
         <div
           className={`rounded-md px-4 py-3 text-sm ${
             statusBanner.type === 'success'
-              ? 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20'
+              ? 'bg-success/10 text-success border border-success/20'
               : 'bg-destructive/10 text-destructive border border-destructive/20'
           }`}
         >

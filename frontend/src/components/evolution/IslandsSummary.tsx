@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { CandidateData, MigrationData, EvolutionStatus } from '../../types/evolution'
-import { MUTATION_COLORS } from '../../types/evolution'
+import { mutationColor } from '../../types/evolution'
 import { scoreColor } from '../../lib/scoring'
 
 interface IslandsSummaryProps {
@@ -86,7 +86,7 @@ export default function IslandsSummary({ candidates, migrations, islandCount, st
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 flex-1 content-start">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 flex-1 content-start">
         {islands.map((island) => (
           <div
             key={island.island}
@@ -115,7 +115,7 @@ export default function IslandsSummary({ candidates, migrations, islandCount, st
                       {island.bestFitness.toFixed(2)}
                     </span>
                     {island.improvement != null && island.improvement > 0 && (
-                      <span className="text-xs text-emerald-500 font-semibold">
+                      <span className="text-xs text-score-positive font-semibold">
                         +{island.improvement.toFixed(1)}
                       </span>
                     )}
@@ -141,7 +141,7 @@ export default function IslandsSummary({ candidates, migrations, islandCount, st
                         title={`${type}: ${count}`}
                         style={{
                           width: `${(count / island.candidateCount) * 100}%`,
-                          backgroundColor: MUTATION_COLORS[type] ?? '#64748b',
+                          backgroundColor: mutationColor(type),
                         }}
                       />
                     ))}
@@ -149,7 +149,7 @@ export default function IslandsSummary({ candidates, migrations, islandCount, st
                   <div className="flex flex-wrap gap-x-2 gap-y-0.5">
                     {Array.from(island.mutationBreakdown.entries()).map(([type, count]) => (
                       <span key={type} className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-                        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: MUTATION_COLORS[type] ?? '#64748b' }} />
+                        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: mutationColor(type) }} />
                         {type.replace('_', ' ')} {count}
                       </span>
                     ))}

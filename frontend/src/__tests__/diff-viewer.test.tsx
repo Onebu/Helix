@@ -88,7 +88,7 @@ describe('DiffViewer', () => {
     expect(addedLines.length).toBeGreaterThan(0)
     // Check that added lines have green text color class
     const firstAdded = addedLines[0] as HTMLElement
-    expect(firstAdded.className).toMatch(/emerald/)
+    expect(firstAdded.className).toMatch(/diff-add/)
   })
 
   it('deleted lines are rendered with red color class and line-through', () => {
@@ -99,7 +99,7 @@ describe('DiffViewer', () => {
     const deletedLines = container.querySelectorAll('[data-diff-type="del"]')
     expect(deletedLines.length).toBeGreaterThan(0)
     const firstDeleted = deletedLines[0] as HTMLElement
-    expect(firstDeleted.className).toMatch(/red/)
+    expect(firstDeleted.className).toMatch(/diff-del/)
     expect(firstDeleted.className).toMatch(/line-through/)
   })
 
@@ -167,7 +167,7 @@ describe('DiffViewer', () => {
       <DiffViewer lineageEvents={events} bestCandidateId="cand-003" />,
     )
     // No migration annotations should exist
-    const migrationAnnotations = container.querySelectorAll('.text-purple-400')
+    const migrationAnnotations = container.querySelectorAll('.text-mutation-fresh')
     expect(migrationAnnotations.length).toBe(0)
   })
 })

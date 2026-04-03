@@ -81,10 +81,10 @@ export default function TemplateEditor({ promptId, initialTemplate, onSaved }: T
           {t('common.cancel')}
         </button>
         {saveStatus === 'saved' && (
-          <span className="text-sm text-emerald-400">{t('prompts.saved')}</span>
+          <span className="text-sm text-success">{t('prompts.saved')}</span>
         )}
         {saveStatus === 'error' && (
-          <span className="text-sm text-red-400">{t('prompts.failedToSaveTemplate')}</span>
+          <span className="text-sm text-destructive">{t('prompts.failedToSaveTemplate')}</span>
         )}
       </div>
     </div>

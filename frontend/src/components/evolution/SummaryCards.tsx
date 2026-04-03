@@ -36,8 +36,8 @@ export default function SummaryCards({ data }: SummaryCardsProps) {
     return labels[r] ?? r.replace(/_/g, ' ')
   })()
 
-  const stopReasonColor = data.terminationReason === 'perfect_fitness' ? 'text-emerald-400'
-    : data.terminationReason === 'error' ? 'text-red-400'
+  const stopReasonColor = data.terminationReason === 'perfect_fitness' ? 'text-score-positive'
+    : data.terminationReason === 'error' ? 'text-score-negative'
     : 'text-foreground'
 
   // Primary cards: the headline metrics
@@ -47,7 +47,7 @@ export default function SummaryCards({ data }: SummaryCardsProps) {
       value: data.bestFitness != null
         ? `${data.bestFitness.toFixed(2)}${data.bestNormalized != null && !isNaN(data.bestNormalized) ? ` (${data.bestNormalized.toFixed(2)} norm)` : ''}${progressPct !== null ? ` ${progressPct}%` : ''}`
         : '\u2014',
-      colorClass: 'text-emerald-400',
+      colorClass: 'text-score-positive',
       icon: Trophy,
       primary: true,
     },
@@ -56,7 +56,7 @@ export default function SummaryCards({ data }: SummaryCardsProps) {
       value: data.seedFitness != null && data.bestFitness != null && data.improvementDelta != null
         ? `+${data.improvementDelta.toFixed(2)}`
         : '\u2014',
-      colorClass: 'text-blue-400',
+      colorClass: 'text-info',
       icon: TrendingUp,
       primary: true,
     },
@@ -67,7 +67,7 @@ export default function SummaryCards({ data }: SummaryCardsProps) {
     {
       label: t('evolution.seedFitness'),
       value: data.seedFitness != null ? data.seedFitness.toFixed(2) : '\u2014',
-      colorClass: 'text-amber-400',
+      colorClass: 'text-warning',
       icon: Target,
     },
     {
@@ -79,13 +79,13 @@ export default function SummaryCards({ data }: SummaryCardsProps) {
     {
       label: t('evolution.lineageEvents'),
       value: String(data.lineageEventCount),
-      colorClass: 'text-blue-400',
+      colorClass: 'text-info',
       icon: GitBranch,
     },
     {
       label: t('evolution.totalCost'),
       value: `$${(data.totalCostUsd ?? 0).toFixed(4)}`,
-      colorClass: 'text-amber-400',
+      colorClass: 'text-warning',
       icon: DollarSign,
     },
   ]

@@ -10,8 +10,8 @@ interface CaseResultsGridProps {
 }
 
 const TIER_STYLES: Record<string, string> = {
-  critical: 'bg-red-500/20 text-red-400',
-  normal: 'bg-blue-500/20 text-blue-400',
+  critical: 'bg-destructive/20 text-destructive',
+  normal: 'bg-info/20 text-info',
   low: 'bg-muted text-muted-foreground',
 }
 
@@ -30,7 +30,7 @@ function PassIcon({ caseId }: { caseId: string }) {
   return (
     <svg
       data-testid={`result-pass-${caseId}`}
-      className="h-5 w-5 text-emerald-400"
+      className="h-5 w-5 text-score-positive"
       fill="none"
       viewBox="0 0 24 24"
       strokeWidth={2}
@@ -51,7 +51,7 @@ function FailIcon({ caseId }: { caseId: string }) {
   return (
     <svg
       data-testid={`result-fail-${caseId}`}
-      className="h-5 w-5 text-red-400"
+      className="h-5 w-5 text-score-negative"
       fill="none"
       viewBox="0 0 24 24"
       strokeWidth={2}
@@ -116,12 +116,12 @@ function DetailPanel({
       {seedResult && (
         <div className="md:col-span-2">
           <div className="mb-2 flex items-center gap-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-amber-400">
+            <p className="text-xs font-semibold uppercase tracking-wider text-warning">
               {t('evolution.seedVsEvolved')}
             </p>
             {/* Show improvement badge */}
             {caseResult.score > seedResult.score ? (
-              <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold text-emerald-400">
+              <span className="rounded-full bg-score-positive/20 px-2 py-0.5 text-xs font-semibold text-score-positive">
                 Improved ({(caseResult.score - seedResult.score).toFixed(1)})
               </span>
             ) : caseResult.score === seedResult.score ? (
@@ -129,7 +129,7 @@ function DetailPanel({
                 No change
               </span>
             ) : (
-              <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-xs font-semibold text-red-400">
+              <span className="rounded-full bg-score-negative/20 px-2 py-0.5 text-xs font-semibold text-score-negative">
                 Regressed ({(caseResult.score - seedResult.score).toFixed(1)})
               </span>
             )}
@@ -139,7 +139,7 @@ function DetailPanel({
             <div className="rounded border border-border/50 bg-muted p-2">
               <p className="mb-1 text-xs font-semibold text-muted-foreground">{t('evolution.seedOriginalPrompt')}</p>
               <div className="flex items-center gap-2">
-                <span className={`text-xs font-semibold ${seedResult.passed ? 'text-emerald-400' : 'text-red-400'}`}>
+                <span className={`text-xs font-semibold ${seedResult.passed ? 'text-score-positive' : 'text-score-negative'}`}>
                   {seedResult.passed ? 'PASS' : 'FAIL'}
                 </span>
                 <span className="text-xs font-mono" style={{ color: scoreColor(seedResult.score) }}>
@@ -152,7 +152,7 @@ function DetailPanel({
             <div className="rounded border border-border/50 bg-muted p-2">
               <p className="mb-1 text-xs font-semibold text-muted-foreground">{t('evolution.evolvedBestCandidate')}</p>
               <div className="flex items-center gap-2">
-                <span className={`text-xs font-semibold ${caseResult.passed ? 'text-emerald-400' : 'text-red-400'}`}>
+                <span className={`text-xs font-semibold ${caseResult.passed ? 'text-score-positive' : 'text-score-negative'}`}>
                   {caseResult.passed ? 'PASS' : 'FAIL'}
                 </span>
                 <span className="text-xs font-mono" style={{ color: scoreColor(caseResult.score) }}>
@@ -174,7 +174,7 @@ function DetailPanel({
           <div className="space-y-1">
             {caseResult.criteriaResults.map((cr, i) => (
               <div key={i} className="flex items-start gap-2 text-xs">
-                <span className={cr.passed ? 'text-emerald-400' : 'text-red-400'}>
+                <span className={cr.passed ? 'text-score-positive' : 'text-score-negative'}>
                   {cr.passed ? '\u2713' : '\u2717'}
                 </span>
                 <span className="text-foreground font-medium">{cr.criterion}:</span>
@@ -252,16 +252,16 @@ export default function CaseResultsGrid({
           <span className="text-muted-foreground">
             {t('evolution.totalCases', { count: caseResults.length })}
           </span>
-          <span className="text-emerald-500 font-medium">{t('evolution.passedCount', { count: passedCount })}</span>
-          <span className="text-red-400 font-medium">{t('evolution.failedCount', { count: failedCount })}</span>
+          <span className="text-score-positive font-medium">{t('evolution.passedCount', { count: passedCount })}</span>
+          <span className="text-score-negative font-medium">{t('evolution.failedCount', { count: failedCount })}</span>
         </div>
         <div className="flex h-1.5 overflow-hidden rounded-full bg-border/50 mt-2">
           <div
-            className="bg-emerald-500 transition-[width]"
+            className="bg-score-positive transition-[width]"
             style={{ width: `${passRate}%` }}
           />
           <div
-            className="bg-red-500 transition-[width]"
+            className="bg-score-negative transition-[width]"
             style={{ width: `${100 - passRate}%` }}
           />
         </div>
@@ -335,7 +335,7 @@ export default function CaseResultsGrid({
                       {c.score.toFixed(3)}
                     </td>
                     <td className="px-4 py-3 text-sm text-muted-foreground" title={c.reason}>
-                      <span className={`mr-1 font-semibold ${c.passed ? 'text-emerald-400' : 'text-red-400'}`}>
+                      <span className={`mr-1 font-semibold ${c.passed ? 'text-score-positive' : 'text-score-negative'}`}>
                         {c.passed ? '[PASS]' : '[FAIL]'}
                       </span>
                       {truncate(c.reason, 50)}

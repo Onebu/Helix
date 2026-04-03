@@ -53,7 +53,7 @@ export default function VersionDiffViewer({
                   <div
                     key={i}
                     data-diff-type="hunk"
-                    className="text-blue-400 mt-2 mb-1"
+                    className="text-diff-hunk mt-2 mb-1"
                   >
                     {line.content}
                   </div>
@@ -64,7 +64,7 @@ export default function VersionDiffViewer({
                   <div
                     key={i}
                     data-diff-type="add"
-                    className="text-emerald-400 bg-emerald-500/5"
+                    className="text-diff-add bg-diff-add-bg"
                   >
                     +{line.content}
                   </div>
@@ -75,7 +75,7 @@ export default function VersionDiffViewer({
                   <div
                     key={i}
                     data-diff-type="del"
-                    className="text-red-400 bg-red-500/5"
+                    className="text-diff-del bg-diff-del-bg"
                   >
                     -{line.content}
                   </div>

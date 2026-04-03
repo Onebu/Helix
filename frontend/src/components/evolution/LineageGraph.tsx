@@ -1,6 +1,6 @@
 import { useMemo, useState, useRef, useCallback } from 'react'
 import type { LineageNode } from '../../types/evolution'
-import { MUTATION_COLORS, COLORS } from '../../types/evolution'
+import { MUTATION_COLORS, mutationBg, mutationColor, SCORE_POSITIVE } from '../../types/evolution'
 import { fitnessColor, REJECTED_OPACITY, ACTIVE_OPACITY, getDotRadius } from '../../lib/scoring'
 import { traceWinningPath, deduplicateEvents } from '../../lib/lineage-utils'
 import { computePairDiff } from '../../lib/diff-utils'
@@ -42,13 +42,13 @@ const LABEL_WIDTH = 56
 
 function DiffLineRow({ line }: { line: DiffLine }) {
   if (line.type === 'hunk') {
-    return <div className="text-blue-400 mt-1 mb-0.5">{line.content}</div>
+    return <div className="text-diff-hunk mt-1 mb-0.5">{line.content}</div>
   }
   if (line.type === 'add') {
-    return <div className="text-emerald-400 bg-emerald-500/5">+{line.content}</div>
+    return <div className="text-diff-add bg-diff-add-bg">+{line.content}</div>
   }
   if (line.type === 'del') {
-    return <div className="text-red-400 bg-red-500/5 line-through opacity-70">-{line.content}</div>
+    return <div className="text-diff-del bg-diff-del-bg line-through opacity-70">-{line.content}</div>
   }
   return <div className="text-muted-foreground"> {line.content}</div>
 }
@@ -87,7 +87,7 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
         if (depedIdx.has(pid)) maxParentDepth = Math.max(maxParentDepth, computeDepth(pid, visited))
       }
       const parent = e.parentIds.length > 0 ? depedIdx.get(e.parentIds[0]) : null
-      const isClone = parent && e.template !== undefined && parent.template !== undefined
+      const isClone = parent && e.template != null && parent.template != null
         && e.template.trim() === parent.template.trim()
       const d = isClone ? maxParentDepth : maxParentDepth + 1
       depthCache.set(id, d)
@@ -260,13 +260,13 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
           </span>
         ))}
         <span className="ml-auto inline-flex items-center gap-1.5">
-          <span className="inline-block w-4 h-0.5 bg-emerald-500 rounded" />
+          <span className="inline-block w-4 h-0.5 bg-score-positive rounded" />
           winning path
         </span>
       </div>
 
       {/* Graph area (scrollable) */}
-      <div ref={containerRef} className="relative overflow-auto" style={{ maxHeight: 450 }}>
+      <div ref={containerRef} className="relative overflow-auto max-h-[min(450px,60vh)]">
         <svg
           width={svgWidth}
           height={svgHeight}
@@ -295,7 +295,7 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
             const path = `M ${src.x} ${src.y} C ${src.x} ${midY}, ${tgt.x} ${midY}, ${tgt.x} ${tgt.y}`
             return (
               <path key={`edge-${i}`} d={path} fill="none"
-                stroke={edge.isMigration ? '#8b5cf6' : 'currentColor'}
+                stroke={edge.isMigration ? MUTATION_COLORS.fresh : 'currentColor'}
                 className={edge.isMigration ? '' : 'text-border'}
                 strokeWidth={edge.isMigration ? 1.5 : 1}
                 strokeDasharray={edge.isMigration ? '4 3' : undefined}
@@ -312,15 +312,15 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
             const path = `M ${src.x} ${src.y} C ${src.x} ${midY}, ${tgt.x} ${midY}, ${tgt.x} ${tgt.y}`
             return (
               <g key={`winning-${i}`}>
-                <path d={path} fill="none" stroke="#22c55e" strokeWidth={6} opacity={0.15} strokeLinecap="round" />
-                <path d={path} fill="none" stroke="#22c55e" strokeWidth={2.5} opacity={0.9} strokeLinecap="round" />
+                <path d={path} fill="none" stroke={SCORE_POSITIVE} strokeWidth={6} opacity={0.15} strokeLinecap="round" />
+                <path d={path} fill="none" stroke={SCORE_POSITIVE} strokeWidth={2.5} opacity={0.9} strokeLinecap="round" />
               </g>
             )
           })}
 
           {/* Nodes */}
           {nodes.map((node) => {
-            const color = MUTATION_COLORS[node.mutationType] ?? '#64748b'
+            const color = mutationColor(node.mutationType)
             const fitColor = fitnessColor(node.fitnessScore) as string
             const opacity = node.rejected ? REJECTED_OPACITY : ACTIVE_OPACITY
             const r = node.radius
@@ -329,10 +329,10 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
             return (
               <g key={node.id}>
                 {node.isWinning && (
-                  <circle cx={node.x} cy={node.y} r={r + 5} fill="none" stroke="#22c55e" strokeWidth={2} opacity={0.3} />
+                  <circle cx={node.x} cy={node.y} r={r + 5} fill="none" stroke={SCORE_POSITIVE} strokeWidth={2} opacity={0.3} />
                 )}
                 {node.isBest && (
-                  <circle cx={node.x} cy={node.y} r={r + 8} fill="none" stroke="#22c55e" strokeWidth={2.5} strokeDasharray="3 2" opacity={0.6} />
+                  <circle cx={node.x} cy={node.y} r={r + 8} fill="none" stroke={SCORE_POSITIVE} strokeWidth={2.5} strokeDasharray="3 2" opacity={0.6} />
                 )}
                 {isSelected && (
                   <circle cx={node.x} cy={node.y} r={r + 6} fill="none" stroke="currentColor" className="text-foreground" strokeWidth={2} opacity={0.8} />
@@ -356,13 +356,13 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
             style={{ left: tooltip.x + 12, top: tooltip.y - 10 }}>
             <div className="font-mono font-bold">{tooltip.node.id.slice(0, 8)}</div>
             <div className="flex items-center gap-2 mt-1">
-              <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: MUTATION_COLORS[tooltip.node.mutationType] ?? '#64748b' }} />
+              <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: mutationColor(tooltip.node.mutationType) }} />
               <span>{tooltip.node.mutationType}</span>
             </div>
             <div className="mt-1">Fitness: <span className="font-mono font-semibold">{tooltip.node.fitnessScore.toFixed(3)}</span></div>
             <div>Gen {tooltip.node.generation} | Island {tooltip.node.island}</div>
             {tooltip.node.rejected && <div className="text-destructive mt-0.5">Rejected</div>}
-            {tooltip.node.isBest && <div className="text-emerald-500 font-semibold mt-0.5">Best candidate</div>}
+            {tooltip.node.isBest && <div className="text-score-positive font-semibold mt-0.5">Best candidate</div>}
             <div className="text-muted-foreground mt-1 border-t border-border pt-1">Click to view diff</div>
           </div>
         )}
@@ -378,12 +378,12 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
             </span>
             <span className="text-[10px] px-1.5 py-0.5 rounded-full"
               style={{
-                backgroundColor: (MUTATION_COLORS[selectedDiff.candidate.mutationType] ?? COLORS.textMuted) + '22',
-                color: MUTATION_COLORS[selectedDiff.candidate.mutationType] ?? COLORS.textMuted,
+                backgroundColor: mutationBg(selectedDiff.candidate.mutationType),
+                color: mutationColor(selectedDiff.candidate.mutationType),
               }}>
               {selectedDiff.candidate.mutationType}
             </span>
-            <span className="text-emerald-400 font-bold text-xs">
+            <span className="text-score-positive font-bold text-xs">
               {selectedDiff.candidate.fitnessScore.toFixed(3)}
             </span>
             {selectedDiff.type === 'diff' && (

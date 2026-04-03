@@ -157,11 +157,11 @@ function ParamRow({ label, value, override, t }: { label: string; value: unknown
     <div className="flex items-center justify-between gap-2 text-sm">
       <span className="text-muted-foreground truncate">{label}</span>
       <span className="flex items-center gap-1.5 shrink-0">
-        <span className={override ? 'font-mono text-amber-400' : 'font-mono text-foreground'}>
+        <span className={override ? 'font-mono text-warning' : 'font-mono text-foreground'}>
           {String(value)}
         </span>
         {override && (
-          <Badge variant="outline" className="text-amber-400 border-amber-400/30 px-1.5 py-0 text-[10px]">
+          <Badge variant="outline" className="text-warning border-warning/30 px-1.5 py-0 text-[10px]">
             {t('evolution.override')}
           </Badge>
         )}
@@ -215,11 +215,11 @@ export default function HyperparameterDisplay({ hyperparameters, modelInfo }: Hy
         {keyEntries.map(({ key, label, value, override }) => (
           <span key={key} className="inline-flex items-center gap-1 text-xs text-muted-foreground">
             {label}
-            <span className={override ? 'font-mono text-amber-400' : 'font-mono text-foreground'}>
+            <span className={override ? 'font-mono text-warning' : 'font-mono text-foreground'}>
               {String(value)}
             </span>
             {override && (
-              <Badge variant="outline" className="text-amber-400 border-amber-400/30 px-1 py-0 text-[10px] leading-tight">
+              <Badge variant="outline" className="text-warning border-warning/30 px-1 py-0 text-[10px] leading-tight">
                 {t('evolution.override')}
               </Badge>
             )}

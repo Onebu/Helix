@@ -48,8 +48,8 @@ describe('CaseResultsGrid', () => {
     const criticalBadge = screen.getByText('critical')
     const normalBadge = screen.getByText('normal')
     const lowBadge = screen.getByText('low')
-    expect(criticalBadge.className).toContain('text-red')
-    expect(normalBadge.className).toContain('text-blue')
+    expect(criticalBadge.className).toContain('text-destructive')
+    expect(normalBadge.className).toContain('text-info')
     expect(lowBadge.className).toContain('text-muted-foreground')
   })
 

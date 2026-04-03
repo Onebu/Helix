@@ -125,21 +125,7 @@ export type EvolutionAction =
   | { type: 'reset' };
 
 // --- Design color constants ---
-
-export const COLORS = {
-  background: '#0c1a14',
-  cardBg: '#142620',
-  border: '#243d33',
-  textPrimary: '#f0f5f3',
-  textSecondary: '#8fad9e',
-  textMuted: '#5c7d6d',
-  green: '#22c55e',
-  blue: '#10b981',
-  amber: '#f59e0b',
-  red: '#ef4444',
-  purple: '#8b5cf6',
-} as const;
-
+// Mutation type colors — categorical palette matching CSS tokens (--mutation-*)
 export const MUTATION_COLORS: Record<string, string> = {
   rcc: '#22c55e',
   structural: '#f59e0b',
@@ -148,6 +134,23 @@ export const MUTATION_COLORS: Record<string, string> = {
   reset: '#ef4444',
   seed: '#94a3b8',
 };
+
+export const MUTATION_FALLBACK = '#64748b';
+
+/** Return a hex color with appended alpha (e.g. '#22c55e' + 0.13 → '#22c55e21') */
+export function mutationBg(type: string): string {
+  return `${MUTATION_COLORS[type] ?? MUTATION_FALLBACK}1a`;
+}
+
+/** Return the mutation color for a type, or the fallback slate. */
+export function mutationColor(type: string): string {
+  return MUTATION_COLORS[type] ?? MUTATION_FALLBACK;
+}
+
+// Score feedback colors — match CSS tokens (--score-*)
+export const SCORE_POSITIVE = '#22c55e';
+export const SCORE_NEGATIVE = '#ef4444';
+export const SCORE_NEUTRAL = '#94a3b8';
 
 // --- Post-run inspection types (Phase 19) ---
 

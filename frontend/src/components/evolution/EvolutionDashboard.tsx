@@ -26,21 +26,21 @@ function StatusBadge({ status }: { status: EvolutionStatus }) {
   switch (status) {
     case 'connecting':
       return (
-        <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20">
-          <span className="h-2 w-2 rounded-full bg-blue-400 animate-pulse mr-1.5" />
+        <Badge className="bg-info/10 text-info border-info/20">
+          <span className="h-2 w-2 rounded-full bg-info animate-pulse mr-1.5" />
           {t('evolution.connecting')}
         </Badge>
       )
     case 'running':
       return (
-        <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
-          <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse mr-1.5" />
+        <Badge className="bg-success/10 text-success border-success/20">
+          <span className="h-2 w-2 rounded-full bg-success animate-pulse mr-1.5" />
           {t('evolution.live')}
         </Badge>
       )
     case 'complete':
       return (
-        <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+        <Badge className="bg-success/10 text-success border-success/20">
           {t('evolution.complete')}
         </Badge>
       )
@@ -77,10 +77,10 @@ function CompactSummary({ data }: { data: SummaryData }) {
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm">
       <span className="font-semibold text-foreground">
-        Best: <span className="text-emerald-500 tabular-nums">{data.bestFitness?.toFixed(2) ?? '—'}</span>
+        Best: <span className="text-score-positive tabular-nums">{data.bestFitness?.toFixed(2) ?? '—'}</span>
       </span>
       {data.improvementDelta != null && data.improvementDelta > 0 && (
-        <span className="text-emerald-500 font-medium">+{data.improvementDelta.toFixed(1)} improvement</span>
+        <span className="text-score-positive font-medium">+{data.improvementDelta.toFixed(1)} improvement</span>
       )}
       <span className="text-muted-foreground">Seed: {data.seedFitness?.toFixed(2) ?? '—'}</span>
       <span className="text-muted-foreground">
@@ -116,11 +116,11 @@ function OverviewContent({
       <CompactSummary data={state.summary} />
 
       {/* Charts row */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-stretch">
-        <div className="lg:col-span-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 items-stretch">
+        <div className="md:col-span-2 lg:col-span-3">
           <FitnessChart data={state.generations} isLive={state.status === 'running'} />
         </div>
-        <div className="lg:col-span-2 flex">
+        <div className="md:col-span-2 lg:col-span-2 flex">
           <IslandsSummary
             candidates={state.candidates}
             migrations={state.migrations}
@@ -415,10 +415,10 @@ export default function EvolutionDashboard({ runId }: EvolutionDashboardProps) {
               {/* Right: CTA */}
               <div className="ml-auto flex items-center gap-2">
                 {acceptError && (
-                  <span className="text-red-400 text-xs">{acceptError}</span>
+                  <span className="text-score-negative text-xs">{acceptError}</span>
                 )}
                 {acceptedVersion !== null && (
-                  <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs">
+                  <Badge className="bg-success/10 text-success border-success/20 text-xs">
                     v{acceptedVersion}
                   </Badge>
                 )}

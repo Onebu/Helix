@@ -618,7 +618,7 @@ export function SynthesisDialog({ promptId, open, onOpenChange, onComplete }: Sy
                 <p className="text-xs text-muted-foreground truncate">{progressText}</p>
                 {conversations.length > 0 && (
                   <div className="flex gap-3 text-xs">
-                    <span className="text-emerald-400">{t('datasets.passed', { count: passedCount })}</span>
+                    <span className="text-success">{t('datasets.passed', { count: passedCount })}</span>
                     <span className="text-destructive">{t('datasets.failed', { count: failedCount })}</span>
                   </div>
                 )}
@@ -629,7 +629,7 @@ export function SynthesisDialog({ promptId, open, onOpenChange, onComplete }: Sy
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Check className="h-4 w-4 text-emerald-400" />
+                    <Check className="h-4 w-4 text-success" />
                     <span className="text-sm font-medium text-foreground">{t('datasets.synthesisComplete')}</span>
                   </div>
                   <button
@@ -641,7 +641,7 @@ export function SynthesisDialog({ promptId, open, onOpenChange, onComplete }: Sy
                 </div>
                 <div className="flex gap-4 text-xs">
                   <span>{result.total} {t('datasets.generated')}</span>
-                  <span className="text-emerald-400">{result.persisted} {t('datasets.saved')}</span>
+                  <span className="text-success">{result.persisted} {t('datasets.saved')}</span>
                   <span className="text-muted-foreground">{result.discarded} {t('datasets.discarded')}</span>
                 </div>
               </div>
@@ -883,7 +883,7 @@ export function SynthesisDialog({ promptId, open, onOpenChange, onComplete }: Sy
                       {conv.personaId} #{conv.conversationIndex + 1}
                     </span>
                     {conv.hasToolCalls && (
-                      <Badge variant="outline" className="text-xs gap-1 bg-amber-500/10 border-amber-500/30">
+                      <Badge variant="outline" className="text-xs gap-1 bg-warning/10 border-warning/30">
                         <Wrench className="h-2.5 w-2.5" />
                         tools
                       </Badge>
@@ -908,7 +908,7 @@ export function SynthesisDialog({ promptId, open, onOpenChange, onComplete }: Sy
                   <p className="text-xs text-muted-foreground">{t('datasets.generated')}</p>
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-emerald-400">{result.persisted}</p>
+                  <p className="text-2xl font-bold text-success">{result.persisted}</p>
                   <p className="text-xs text-muted-foreground">{t('datasets.persisted')}</p>
                 </div>
                 <div>
@@ -933,13 +933,13 @@ export function SynthesisDialog({ promptId, open, onOpenChange, onComplete }: Sy
                       {conv.personaId} #{conv.conversationIndex + 1}
                     </span>
                     {conv.hasToolCalls && (
-                      <Badge variant="outline" className="text-xs gap-1 bg-amber-500/10 border-amber-500/30">
+                      <Badge variant="outline" className="text-xs gap-1 bg-warning/10 border-warning/30">
                         <Wrench className="h-2.5 w-2.5" />
                         tools
                       </Badge>
                     )}
                     {conv.caseId && (
-                      <span className="text-xs text-emerald-400 ml-auto">{t('datasets.saved')}</span>
+                      <span className="text-xs text-success ml-auto">{t('datasets.saved')}</span>
                     )}
                   </div>
                 ))}
@@ -970,7 +970,7 @@ export function SynthesisDialog({ promptId, open, onOpenChange, onComplete }: Sy
               <Badge variant="outline" className="text-xs">
                 {t('datasets.conversations', { count: reviewConversations.length })}
               </Badge>
-              <span className="text-emerald-400">{reviewApprovedCount} {t('datasets.approved')}</span>
+              <span className="text-success">{reviewApprovedCount} {t('datasets.approved')}</span>
               <span className="text-destructive">{reviewRejectedCount} {t('datasets.rejected')}</span>
               <span className="text-muted-foreground">{reviewPendingCount} {t('datasets.pending')}</span>
             </div>
@@ -980,7 +980,7 @@ export function SynthesisDialog({ promptId, open, onOpenChange, onComplete }: Sy
               <Button
                 variant="outline"
                 size="sm"
-                className="text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
+                className="text-success border-success/30 hover:bg-success/10"
                 onClick={handleApproveAll}
                 disabled={reviewPendingCount === 0 || status === 'submitting'}
               >
