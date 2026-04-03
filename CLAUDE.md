@@ -116,6 +116,22 @@ docker compose -f docker-compose.dev.yml up      # Dev with hot reload
 - **Snapshot-copy parallelism**: CostTracker/LineageCollector use snapshot copies per island to avoid locks during parallel evolution
 - **ensure_columns migration**: New DB columns added at startup by inspecting existing schema — no migration files needed
 
+## Git Workflow
+
+- **Every change starts with a GitHub issue.** Create an issue first, then a branch linked to it.
+- **Branch naming**: `<type>/<short-description>` — e.g. `feat/modular-prompts`, `fix/lineage-null-crash`, `chore/bump-deps`.
+- **Commit prefixes** (Conventional Commits):
+  - `feat:` — new feature
+  - `fix:` — bug fix
+  - `chore:` — maintenance, deps, CI
+  - `docs:` — documentation only
+  - `refactor:` — code restructure without behavior change
+  - `test:` — test additions or fixes
+- **PR title** must use the same prefix format: `feat: add modular prompt composition`.
+- **PR body** must reference the issue: `Closes #54` or `Resolves #54`.
+- **Merge strategy**: squash merge, delete branch after merge.
+- **After merge**: close the linked issue if not auto-closed.
+
 ## Conventions
 
 - Python: `from __future__ import annotations` at top. Use `X | None` not `Optional[X]`. `list[T]` not `List[T]`.
