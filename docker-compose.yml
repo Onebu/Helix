@@ -35,7 +35,7 @@ services:
     environment:
       POSTGRES_DB: helix
       POSTGRES_USER: helix
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-helix_dev}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

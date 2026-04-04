@@ -4,7 +4,7 @@
 # --------------- Stage 1: Builder ---------------
 FROM python:3.13-slim AS builder
 
-COPY --from=ghcr.io/astral-sh/uv:0.10 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.10.1 /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
@@ -32,6 +32,11 @@ COPY --from=builder /app/.venv /app/.venv
 
 # Copy application source
 COPY --from=builder /app/api /app/api
+
+RUN adduser --disabled-password --gecos '' --uid 1000 appuser \
+    && chown -R appuser:appuser /app
+
+USER appuser
 
 ENV PATH="/app/.venv/bin:$PATH"
 
