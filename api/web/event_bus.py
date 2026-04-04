@@ -12,6 +12,7 @@ Exports:
 from __future__ import annotations
 
 import asyncio
+import time
 from collections import deque
 
 from api.web.events import EvolutionEvent
@@ -35,6 +36,8 @@ class EventBus:
         self._buffers: dict[str, deque[EvolutionEvent]] = {}
         # run_id -> set of subscriber queues
         self._subscribers: dict[str, set[asyncio.Queue]] = {}
+        # run_id -> timestamp when cleanup_run was called (for expiry)
+        self._completed_at: dict[str, float] = {}
         # Lock for publish() to ensure monotonic event_ids under concurrency
         self._lock = asyncio.Lock()
 
@@ -132,8 +135,29 @@ class EventBus:
 
         Keeps the ring buffer for late reconnectors, but removes
         the subscriber set so no new events are delivered.
+        Buffers are automatically purged after 30 minutes by purge_stale().
 
         Args:
             run_id: The run to clean up.
         """
         self._subscribers.pop(run_id, None)
+        self._completed_at[run_id] = time.monotonic()
+
+    def purge_stale(self, max_age_seconds: float = 1800) -> int:
+        """Remove ring buffers and counters for runs completed more than max_age_seconds ago.
+
+        Call periodically to prevent unbounded memory growth.
+
+        Returns:
+            Number of runs purged.
+        """
+        now = time.monotonic()
+        stale = [
+            rid for rid, completed in self._completed_at.items()
+            if now - completed > max_age_seconds
+        ]
+        for rid in stale:
+            self._buffers.pop(rid, None)
+            self._counters.pop(rid, None)
+            self._completed_at.pop(rid, None)
+        return len(stale)

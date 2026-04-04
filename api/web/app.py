@@ -104,6 +104,11 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Rate limiting: per-IP sliding window
+    from api.web.rate_limit import RateLimitMiddleware
+
+    application.add_middleware(RateLimitMiddleware)
+
     # CORS: configurable via CORS_ORIGINS env var (comma-separated)
     cors_origins_str = os.environ.get("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000")
     cors_origins = [origin.strip() for origin in cors_origins_str.split(",")]

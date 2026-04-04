@@ -17,7 +17,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from api.dataset.models import PriorityTier, TestCase
 from api.dataset.service import DatasetService
@@ -131,8 +131,12 @@ async def import_cases(
     service: DatasetService = Depends(get_dataset_service),
 ) -> list[TestCaseResponse]:
     """Import test cases from an uploaded JSON or YAML file."""
-    suffix = Path(file.filename).suffix if file.filename else ".json"
+    # Enforce 10 MB upload limit
+    max_size = 10 * 1024 * 1024
     content = await file.read()
+    if len(content) > max_size:
+        raise HTTPException(status_code=413, detail="File too large. Maximum upload size is 10 MB.")
+    suffix = Path(file.filename).suffix if file.filename else ".json"
 
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(content)
