@@ -14,10 +14,10 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta, timezone
 
+import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from passlib.context import CryptContext
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,7 +26,6 @@ from api.storage.models import User
 
 # --------------- Configuration ---------------
 
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 _bearer_scheme = HTTPBearer(auto_error=False)
 
 
@@ -49,11 +48,13 @@ def is_auth_disabled() -> bool:
 
 
 def hash_password(password: str) -> str:
-    return _pwd_context.hash(password)
+    pw = password.encode("utf-8")[:72]  # bcrypt 72-byte limit
+    return bcrypt.hashpw(pw, bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return _pwd_context.verify(plain, hashed)
+    pw = plain.encode("utf-8")[:72]
+    return bcrypt.checkpw(pw, hashed.encode("utf-8"))
 
 
 # --------------- JWT ---------------
