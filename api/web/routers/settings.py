@@ -87,27 +87,48 @@ def _build_settings_response(
     )
 
 
-async def _load_db_settings(session: AsyncSession) -> dict:
+def _setting_filter(category: str, user_id: str | None):
+    """Build a SQLAlchemy filter for a setting by category + user scope.
+
+    Matches the user's own rows, or legacy rows with NULL user_id.
+    """
+    from sqlalchemy import or_
+
+    base = Setting.category == category
+    if user_id and user_id != "local":
+        return base, or_(Setting.user_id == user_id, Setting.user_id.is_(None))
+    return base, Setting.user_id.is_(None)
+
+
+async def _get_setting(session: AsyncSession, category: str, user_id: str | None) -> Setting | None:
+    """Fetch a setting row scoped to a user. Prefers user-owned over legacy NULL rows."""
+    cat_filter, user_filter = _setting_filter(category, user_id)
+    result = await session.execute(
+        select(Setting).where(cat_filter, user_filter).order_by(Setting.user_id.desc())
+    )
+    return result.scalars().first()
+
+
+async def _load_db_settings(session: AsyncSession, user_id: str | None = None) -> dict:
     """Load global_config, generation_defaults, and api_keys from DB into a flat dict.
 
+    Settings are scoped per-user when auth is enabled. Falls back to legacy
+    NULL user_id rows for backwards compatibility.
     API keys stored in the "api_keys" category are decrypted before merging.
     Returns a dict suitable for merging onto GeneConfig defaults.
     """
     merged: dict = {}
 
-    result = await session.execute(select(Setting).where(Setting.category == "global_config"))
-    global_row = result.scalar_one_or_none()
+    global_row = await _get_setting(session, "global_config", user_id)
     if global_row is not None:
         merged.update(global_row.data)
 
-    result = await session.execute(select(Setting).where(Setting.category == "generation_defaults"))
-    gen_row = result.scalar_one_or_none()
+    gen_row = await _get_setting(session, "generation_defaults", user_id)
     if gen_row is not None:
         merged["generation"] = gen_row.data
 
     # Load and decrypt API keys stored in DB
-    result = await session.execute(select(Setting).where(Setting.category == "api_keys"))
-    keys_row = result.scalar_one_or_none()
+    keys_row = await _get_setting(session, "api_keys", user_id)
     if keys_row is not None:
         encryptor = get_encryptor()
         for field, encrypted_value in keys_row.data.items():
@@ -157,7 +178,7 @@ async def get_settings(
     Reads DB Setting rows (including encrypted API keys) and merges onto
     GeneConfig defaults. Env var keys take priority over DB-stored keys.
     """
-    db_data = await _load_db_settings(session)
+    db_data = await _load_db_settings(session, user.username)
     # Check if any API keys are stored in DB (before merge overrides them)
     has_db_keys = any(k in db_data for k in _API_KEY_FIELDS)
     merged = _merge_db_onto_config(config, db_data)
@@ -203,44 +224,35 @@ async def update_settings(
             elif value:
                 encrypted_keys[field] = value  # Already encrypted, keep as-is
 
-        result = await session.execute(
-            select(Setting).where(Setting.category == "api_keys")
-        )
-        keys_row = result.scalar_one_or_none()
+        keys_row = await _get_setting(session, "api_keys", user.username)
 
         if keys_row is not None:
             merged_keys = {**keys_row.data, **encrypted_keys}
             keys_row.data = merged_keys
         else:
-            keys_row = Setting(category="api_keys", data=encrypted_keys)
+            keys_row = Setting(category="api_keys", data=encrypted_keys, user_id=user.username)
             session.add(keys_row)
 
     # --- Upsert global_config ---
     if update_data:
-        result = await session.execute(
-            select(Setting).where(Setting.category == "global_config")
-        )
-        global_row = result.scalar_one_or_none()
+        global_row = await _get_setting(session, "global_config", user.username)
 
         if global_row is not None:
             merged_data = {**global_row.data, **update_data}
             global_row.data = merged_data
         else:
-            global_row = Setting(category="global_config", data=update_data)
+            global_row = Setting(category="global_config", data=update_data, user_id=user.username)
             session.add(global_row)
 
     # --- Upsert generation_defaults ---
     if generation_update is not None:
-        result = await session.execute(
-            select(Setting).where(Setting.category == "generation_defaults")
-        )
-        gen_row = result.scalar_one_or_none()
+        gen_row = await _get_setting(session, "generation_defaults", user.username)
 
         if gen_row is not None:
             merged_gen = {**gen_row.data, **generation_update}
             gen_row.data = merged_gen
         else:
-            gen_row = Setting(category="generation_defaults", data=generation_update)
+            gen_row = Setting(category="generation_defaults", data=generation_update, user_id=user.username)
             session.add(gen_row)
 
     await session.commit()
@@ -249,7 +261,7 @@ async def update_settings(
     get_config.cache_clear()
 
     # Re-read from DB and merge onto fresh config for response
-    db_data = await _load_db_settings(session)
+    db_data = await _load_db_settings(session, user.username)
     has_db_keys = any(k in db_data for k in _API_KEY_FIELDS)
     fresh_config = GeneConfig()
     merged = _merge_db_onto_config(fresh_config, db_data)

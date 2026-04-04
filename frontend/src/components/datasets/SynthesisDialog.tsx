@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { getApiBaseUrl, getWsBaseUrl } from '@/lib/api-config'
+import { getToken } from '@/lib/auth'
 import { UserPlus, Download, Upload, Wrench, Sparkles, X, Check, AlertCircle } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { PersonaCard, type Persona } from './PersonaCard'
@@ -363,7 +364,9 @@ export function SynthesisDialog({ promptId, open, onOpenChange, onComplete }: Sy
 
   function connectWebSocket(synthesisRunId: string, isReconnect = false) {
     const wsBase = getWsBaseUrl()
-    const ws = new WebSocket(`${wsBase}/ws/synthesis/${synthesisRunId}`)
+    const token = getToken()
+    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : ''
+    const ws = new WebSocket(`${wsBase}/ws/synthesis/${synthesisRunId}${tokenParam}`)
     wsRef.current = ws
 
     ws.onmessage = (event) => {

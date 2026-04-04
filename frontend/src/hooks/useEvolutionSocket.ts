@@ -5,6 +5,7 @@ import type {
   RawEvolutionEvent,
 } from '../types/evolution';
 import { getWsBaseUrl } from '../lib/api-config';
+import { getToken } from '../lib/auth';
 
 export const initialState: EvolutionState = {
   status: 'idle',
@@ -182,7 +183,9 @@ export function useEvolutionSocket(runId: string | null): EvolutionState {
     dispatch({ type: 'ws_connecting' });
 
     const wsBase = getWsBaseUrl();
-    const ws = new WebSocket(`${wsBase}/ws/evolution/${runId}`);
+    const token = getToken();
+    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
+    const ws = new WebSocket(`${wsBase}/ws/evolution/${runId}${tokenParam}`);
     wsRef.current = ws;
 
     ws.onmessage = (event) => {

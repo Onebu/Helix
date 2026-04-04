@@ -22,7 +22,7 @@ class TestSettingModel:
 
         mapper = sa_inspect(Setting)
         column_names = {c.key for c in mapper.column_attrs}
-        assert {"id", "category", "data"}.issubset(column_names)
+        assert {"id", "category", "data", "user_id"}.issubset(column_names)
 
     def test_id_is_primary_key(self):
         from api.storage.models import Setting
@@ -31,11 +31,11 @@ class TestSettingModel:
         pk_cols = [c.name for c in mapper.primary_key]
         assert "id" in pk_cols
 
-    def test_category_is_unique(self):
+    def test_has_user_id_column(self):
         from api.storage.models import Setting
 
-        col = Setting.__table__.columns["category"]
-        assert col.unique is True
+        col = Setting.__table__.columns["user_id"]
+        assert col.nullable is True
 
     def test_data_is_json(self):
         from api.storage.models import Setting

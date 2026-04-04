@@ -124,20 +124,22 @@ class LLMCallRecord(Base):
 
 
 class Setting(Base):
-    """Key-value store for global configuration.
+    """Key-value store for per-user configuration.
 
     Each row represents a config category (e.g. "global_config",
-    "generation_defaults", "api_keys"). The data column holds the actual
-    config dict as JSON.
+    "generation_defaults", "api_keys") scoped to a user.
+    The data column holds the actual config dict as JSON.
 
     API keys are stored encrypted (Fernet) in the "api_keys" category.
+    user_id is nullable for backwards compat with pre-auth rows.
     """
 
     __tablename__ = "settings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    category: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    category: Mapped[str] = mapped_column(String(100), nullable=False)
     data: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    user_id: Mapped[str | None] = mapped_column(String(150), index=True)
 
 
 class PromptConfig(Base):
