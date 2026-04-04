@@ -18,6 +18,10 @@ def _clean_gene_env(monkeypatch):
     create_app() don't re-load .env values after cleanup.
     """
     monkeypatch.setattr("api.web.app.load_dotenv", lambda *a, **kw: None)
+    # Disable rate limiting in tests
+    monkeypatch.setenv("RATE_LIMIT_PER_MINUTE", "0")
+    from api.web.rate_limit import reset_limiters
+    reset_limiters()
     for key in list(os.environ):
         if key.startswith("GENE_"):
             monkeypatch.delenv(key)
