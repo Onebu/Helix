@@ -157,10 +157,23 @@ docker compose -f docker-compose.dev.yml up      # Dev with hot reload
 
 ## Environment
 
-Required in `.env`:
+### Two modes
+
+1. **Developer mode (default)** — single-user, no login required. Recommended for local development and solo use. API keys configured via `.env` or the Settings page.
+2. **Multi-user mode** — JWT authentication, per-user API keys stored encrypted in DB, login page. Enable with `HELIX_AUTH_DISABLED=false`. Only needed for shared/team deployments.
+
+### Required in `.env`
 ```
-GENE_GEMINI_API_KEY=...          # Or GENE_OPENROUTER_API_KEY, GENE_OPENAI_API_KEY
+GENE_OPENROUTER_API_KEY=...      # Or GENE_GEMINI_API_KEY, GENE_OPENAI_API_KEY (at least one)
 GENE_DATABASE_URL=sqlite+aiosqlite:///./helix.db  # Optional, defaults to None (must be set for DB features)
+```
+
+### Optional
+```
+CORS_ORIGINS=http://localhost:5173    # Comma-separated, default: localhost dev ports
+RATE_LIMIT_PER_MINUTE=120            # Per-IP rate limit, 0 = disabled
+HELIX_AUTH_DISABLED=true              # Set to false for multi-user mode
+HELIX_SECRET_KEY=...                  # JWT signing key (auto-generated if missing)
 ```
 
 `VITE_API_URL` — set in production frontend builds to point at the backend (e.g., `https://api.example.com`). Leave empty for local dev.

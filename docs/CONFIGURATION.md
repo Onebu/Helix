@@ -7,6 +7,27 @@ Helix is configured through environment variables (`.env` file) and the **Settin
 - **Config tab** — per-prompt model and inference overrides
 - **Evolution tab** — per-run parameter overrides
 
+## Two Modes
+
+Helix runs in one of two modes:
+
+### Developer Mode (default)
+
+Single-user, no login required. Ideal for local development and solo use.
+
+- No authentication — all endpoints are open
+- API keys configured via `.env` or the Settings page (stored globally)
+- This is the recommended mode for most users
+
+### Multi-User Mode
+
+JWT authentication with per-user data isolation. For shared or team deployments.
+
+- Login/register page with username + password
+- API keys stored encrypted (Fernet) per user in the database
+- Each user sees only their own settings and API keys
+- Enable with: `HELIX_AUTH_DISABLED=false`
+
 ## Quick Start
 
 ```bash
@@ -112,6 +133,23 @@ The app automatically creates tables and migrates schema on startup.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `CORS_ORIGINS` | Allowed CORS origins (comma-separated) | `http://localhost:5173,http://localhost:3000` |
+| `RATE_LIMIT_PER_MINUTE` | Per-IP request limit for API endpoints (0 = disabled) | `120` |
+| `RATE_LIMIT_EVOLUTION` | Per-IP limit for evolution start (expensive LLM calls) | `10` |
+
+### Authentication (Multi-User Mode)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `HELIX_AUTH_DISABLED` | `true` = developer mode (no login), `false` = multi-user mode | `true` |
+| `HELIX_SECRET_KEY` | JWT signing key. Auto-generated and saved to `.env` if missing | (auto-generated) |
+| `HELIX_JWT_EXPIRY_HOURS` | JWT token lifetime in hours | `24` |
+
+When multi-user mode is enabled (`HELIX_AUTH_DISABLED=false`):
+- All API endpoints require a Bearer JWT token
+- WebSocket connections require a `?token=` query parameter
+- Users register/login at `/api/auth/register` and `/api/auth/login`
+- The frontend shows a login page and stores the JWT in localStorage
+- API keys saved via Settings are scoped per user and encrypted with Fernet
 
 ### Langfuse Integration
 
@@ -158,7 +196,7 @@ Same `GENE_*` variables apply. Additional Docker-specific:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `POSTGRES_PASSWORD` | PostgreSQL password (only with `--profile postgres`) | `helix_dev` |
+| `POSTGRES_PASSWORD` | PostgreSQL password (only with `--profile postgres`). **Required** in production compose — no default. Dev compose defaults to `helix_dev`. | — |
 
 ## Thinking Budget (Gemini models)
 
