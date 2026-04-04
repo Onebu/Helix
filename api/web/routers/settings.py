@@ -19,7 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.config.models import GeneConfig, GenerationConfig
 from api.gateway.registry import PROVIDER_REGISTRY, SUPPORTED_PROVIDERS
 from api.storage.encryption import get_encryptor
-from api.storage.models import Setting
+from api.storage.models import Setting, User
+from api.web.auth import get_current_user
 from api.web.deps import get_config, get_db_session
 from api.web.schemas import (
     RoleConfig,
@@ -149,6 +150,7 @@ def _merge_db_onto_config(config: GeneConfig, db_data: dict) -> GeneConfig:
 async def get_settings(
     config: GeneConfig = Depends(get_config),
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> SettingsResponse:
     """Return current configuration with masked API keys.
 
@@ -163,7 +165,7 @@ async def get_settings(
 
 
 @router.get("/defaults", response_model=SettingsResponse)
-async def get_defaults() -> SettingsResponse:
+async def get_defaults(user: User = Depends(get_current_user)) -> SettingsResponse:
     """Return GeneConfig default values (for 'Reset to Defaults' feature)."""
     defaults = GeneConfig()
     return _build_settings_response(defaults)
@@ -174,6 +176,7 @@ async def update_settings(
     body: SettingsUpdateRequest,
     config: GeneConfig = Depends(get_config),
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> SettingsResponse:
     """Update configuration in database and return new settings.
 
@@ -260,7 +263,7 @@ async def update_settings(
 
 
 @router.post("/test-connection", response_model=TestConnectionResponse)
-async def test_connection(body: TestConnectionRequest) -> TestConnectionResponse:
+async def test_connection(body: TestConnectionRequest, user: User = Depends(get_current_user)) -> TestConnectionResponse:
     """Validate an API key by making a lightweight request to the provider.
 
     Attempts to list models from the provider. Returns success/failure.

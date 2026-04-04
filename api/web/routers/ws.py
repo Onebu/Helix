@@ -16,13 +16,16 @@ from __future__ import annotations
 
 import asyncio
 
+import jwt
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+from api.web.auth import decode_access_token, is_auth_disabled
 
 router = APIRouter()
 
 
 @router.websocket("/ws/evolution/{run_id}")
-async def evolution_ws(websocket: WebSocket, run_id: str) -> None:
+async def evolution_ws(websocket: WebSocket, run_id: str, token: str | None = None) -> None:
     """Stream evolution events over WebSocket with replay support.
 
     Accepts the connection, sends a connected message, waits for a
@@ -33,7 +36,17 @@ async def evolution_ws(websocket: WebSocket, run_id: str) -> None:
     Args:
         websocket: The WebSocket connection.
         run_id: Unique identifier for the evolution run to stream.
+        token: Optional JWT token for authentication.
     """
+    if not is_auth_disabled():
+        if token is None:
+            await websocket.close(code=4001, reason="Missing auth token")
+            return
+        try:
+            decode_access_token(token)
+        except jwt.PyJWTError:
+            await websocket.close(code=4001, reason="Invalid token")
+            return
     await websocket.accept()
     event_bus = websocket.app.state.event_bus
 
@@ -79,7 +92,7 @@ async def evolution_ws(websocket: WebSocket, run_id: str) -> None:
 
 
 @router.websocket("/ws/synthesis/{run_id}")
-async def synthesis_ws(websocket: WebSocket, run_id: str) -> None:
+async def synthesis_ws(websocket: WebSocket, run_id: str, token: str | None = None) -> None:
     """Stream synthesis events over WebSocket with replay support.
 
     Follows the same protocol as evolution_ws: connected -> subscribe ->
@@ -88,7 +101,17 @@ async def synthesis_ws(websocket: WebSocket, run_id: str) -> None:
     Args:
         websocket: The WebSocket connection.
         run_id: Unique identifier for the synthesis run to stream.
+        token: Optional JWT token for authentication.
     """
+    if not is_auth_disabled():
+        if token is None:
+            await websocket.close(code=4001, reason="Missing auth token")
+            return
+        try:
+            decode_access_token(token)
+        except jwt.PyJWTError:
+            await websocket.close(code=4001, reason="Invalid token")
+            return
     await websocket.accept()
     event_bus = websocket.app.state.event_bus
 

@@ -17,7 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.config.models import GeneConfig
 from api.gateway.factory import create_provider
 from api.registry.llm_mocker import LLMMocker
-from api.storage.models import PromptConfig, ToolFormatGuide
+from api.storage.models import PromptConfig, ToolFormatGuide, User
+from api.web.auth import get_current_user
 from api.web.deps import get_config, get_db_session
 from api.web.schemas import (
     FormatGuideResponse,
@@ -47,6 +48,7 @@ def _row_to_response(row: ToolFormatGuide) -> FormatGuideResponse:
 async def list_format_guides(
     prompt_id: str,
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> list[FormatGuideResponse]:
     """List all format guides for a prompt."""
     stmt = select(ToolFormatGuide).where(ToolFormatGuide.prompt_id == prompt_id)
@@ -64,6 +66,7 @@ async def upsert_format_guide(
     tool_name: str,
     examples: list[str],
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> FormatGuideResponse:
     """Create or update a format guide for a specific tool.
 
@@ -112,6 +115,7 @@ async def delete_format_guide(
     prompt_id: str,
     tool_name: str,
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> dict:
     """Delete a format guide for a specific tool."""
     stmt = select(ToolFormatGuide).where(
@@ -138,6 +142,7 @@ async def generate_sample(
     body: GenerateSampleRequest,
     config: GeneConfig = Depends(get_config),
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> GenerateSampleResponse:
     """Generate a sample mock response using the LLM tool mocker.
 

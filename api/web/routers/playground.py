@@ -36,8 +36,13 @@ from api.gateway.factory import create_provider
 from api.registry.llm_mocker import LLMMocker
 from api.registry.schemas import MockDefinition
 from api.registry.service import PromptRegistry
-from api.registry.tool_resolver import DEFAULT_MAX_TOOL_STEPS, normalize_tool_call, resolve_tool_call
-from api.storage.models import PlaygroundVariable, PromptConfig
+from api.registry.tool_resolver import (
+    DEFAULT_MAX_TOOL_STEPS,
+    normalize_tool_call,
+    resolve_tool_call,
+)
+from api.storage.models import PlaygroundVariable, PromptConfig, User
+from api.web.auth import get_current_user
 from api.web.deps import get_config, get_db_session, get_registry
 from api.web.schemas import (
     ChatRequest,
@@ -57,6 +62,7 @@ logger = logging.getLogger(__name__)
 async def get_variables(
     prompt_id: str,
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> PlaygroundVariablesResponse:
     """Return all saved variable values for a prompt from DB."""
     stmt = select(PlaygroundVariable).where(PlaygroundVariable.prompt_id == prompt_id)
@@ -71,6 +77,7 @@ async def save_variables(
     prompt_id: str,
     body: PlaygroundVariablesUpdateRequest,
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> PlaygroundVariablesResponse:
     """Save variable values to DB (upsert per variable_name).
 
@@ -110,6 +117,7 @@ async def save_variables(
 async def get_playground_config(
     prompt_id: str,
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> PlaygroundConfigResponse:
     """Return playground config (turn_limit, budget) for a prompt."""
     result = await session.execute(
@@ -127,6 +135,7 @@ async def update_playground_config(
     prompt_id: str,
     body: PlaygroundConfigUpdateRequest,
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> PlaygroundConfigResponse:
     """Update playground config (turn_limit, budget) for a prompt."""
     result = await session.execute(
@@ -164,6 +173,7 @@ async def chat(
     config: GeneConfig = Depends(get_config),
     registry: PromptRegistry = Depends(get_registry),
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ):
     """Stream an LLM chat response via Server-Sent Events.
 

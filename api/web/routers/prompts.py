@@ -23,7 +23,8 @@ from api.registry.models import PromptRegistration, VariableDefinition
 from api.registry.schemas import PromptConfigSchema
 from api.registry.service import PromptRegistry, _extract_anchor_variables
 from api.storage.models import Prompt as PromptModel
-from api.storage.models import PromptConfig
+from api.storage.models import PromptConfig, User
+from api.web.auth import get_current_user
 from api.web.deps import get_config, get_db_session, get_registry
 from api.web.schemas import (
     AcceptVersionRequest,
@@ -60,6 +61,7 @@ def _record_to_summary(record) -> PromptSummary:
 @router.get("/", response_model=list[PromptSummary])
 async def list_prompts(
     registry: PromptRegistry = Depends(get_registry),
+    user: User = Depends(get_current_user),
 ) -> list[PromptSummary]:
     """List all registered prompts."""
     prompt_ids = await registry.list_prompts()
@@ -154,6 +156,7 @@ def _merge_overrides_onto_config(config: GeneConfig, overrides_dict: dict) -> Ge
 async def extract_variables(
     body: ExtractVariablesRequest,
     registry: PromptRegistry = Depends(get_registry),
+    user: User = Depends(get_current_user),
 ) -> ExtractVariablesResponse:
     """Extract Jinja2 template variables from a template string.
 
@@ -174,6 +177,7 @@ async def get_prompt_config(
     config: GeneConfig = Depends(get_config),
     session: AsyncSession = Depends(get_db_session),
     registry: PromptRegistry = Depends(get_registry),
+    user: User = Depends(get_current_user),
 ) -> PromptConfigResponse:
     """Return prompt config with provenance info.
 
@@ -207,6 +211,7 @@ async def update_prompt_config(
     config: GeneConfig = Depends(get_config),
     session: AsyncSession = Depends(get_db_session),
     registry: PromptRegistry = Depends(get_registry),
+    user: User = Depends(get_current_user),
 ) -> PromptConfigResponse:
     """Update per-prompt config in DB PromptConfig table.
 
@@ -265,6 +270,7 @@ async def get_prompt(
     prompt_id: str,
     registry: PromptRegistry = Depends(get_registry),
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> PromptDetail:
     """Get a prompt's full detail including template text from DB."""
     record = await registry.load_prompt(prompt_id)
@@ -311,6 +317,7 @@ async def get_prompt(
 async def create_prompt(
     body: CreatePromptRequest,
     registry: PromptRegistry = Depends(get_registry),
+    user: User = Depends(get_current_user),
 ) -> PromptSummary:
     """Register a new prompt."""
     # Convert body.variables (list[dict] | None) to list[VariableDefinition] | None
@@ -335,6 +342,7 @@ async def create_prompt(
 async def delete_prompt(
     prompt_id: str,
     registry: PromptRegistry = Depends(get_registry),
+    user: User = Depends(get_current_user),
 ) -> None:
     """Delete a prompt and all associated data."""
     await registry.delete_prompt(prompt_id)
@@ -346,6 +354,7 @@ async def update_prompt(
     body: dict,
     registry: PromptRegistry = Depends(get_registry),
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> PromptSummary:
     """Partially update a prompt's metadata (e.g. purpose)."""
     result = await session.execute(
@@ -369,6 +378,7 @@ async def update_template(
     prompt_id: str,
     body: UpdateTemplateRequest,
     registry: PromptRegistry = Depends(get_registry),
+    user: User = Depends(get_current_user),
 ) -> PromptSummary:
     """Update a prompt's template text."""
     record = await registry.update_template(prompt_id, body.template, "Update via API")
@@ -381,6 +391,7 @@ async def update_variable_definitions(
     body: UpdateVariablesRequest,
     registry: PromptRegistry = Depends(get_registry),
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> PromptSummary:
     """Update variable definitions for a prompt.
 
@@ -417,6 +428,7 @@ async def update_mocks(
     prompt_id: str,
     body: UpdateMocksRequest,
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> dict:
     """Update mock definitions for a prompt.
 
@@ -439,6 +451,7 @@ async def update_tools(
     prompt_id: str,
     body: UpdateToolsRequest,
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> dict:
     """Update tool definitions for a prompt."""
     result = await session.execute(
@@ -457,6 +470,7 @@ async def update_tools(
 async def get_mocks(
     prompt_id: str,
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> dict:
     """Get mock definitions for a prompt."""
     result = await session.execute(
@@ -477,6 +491,7 @@ async def list_versions(
     prompt_id: str,
     registry: PromptRegistry = Depends(get_registry),
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> list[PromptVersionResponse]:
     """List all versions for a prompt, ordered by version number."""
 
@@ -512,6 +527,7 @@ async def get_version(
     version: int,
     registry: PromptRegistry = Depends(get_registry),
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> PromptVersionResponse:
     """Get a specific version of a prompt."""
 
@@ -553,6 +569,7 @@ async def activate_version(
     prompt_id: str,
     version: int,
     registry: PromptRegistry = Depends(get_registry),
+    user: User = Depends(get_current_user),
 ) -> PromptVersionResponse:
     """Activate a specific version for a prompt."""
     # activate_version raises PromptNotFoundError -> 404 via exception handler
@@ -574,6 +591,7 @@ async def accept_version(
     prompt_id: str,
     body: AcceptVersionRequest,
     registry: PromptRegistry = Depends(get_registry),
+    user: User = Depends(get_current_user),
 ) -> PromptVersionResponse:
     """Accept an evolved template as a new version.
 

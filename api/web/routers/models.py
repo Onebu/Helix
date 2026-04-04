@@ -20,6 +20,8 @@ from api.gateway.model_listing import (
     fetch_openai_models,
     fetch_openrouter_models,
 )
+from api.storage.models import User
+from api.web.auth import get_current_user
 from api.web.deps import get_config
 
 router = APIRouter()
@@ -36,6 +38,7 @@ _PROVIDER_CONFIG: dict[str, tuple[str, str, object]] = {
 async def list_models(
     provider: str = Query(..., description="Provider name: 'openrouter', 'gemini', or 'openai'"),
     config: GeneConfig = Depends(get_config),
+    user: User = Depends(get_current_user),
 ) -> list[ModelInfo]:
     """List available models from the specified provider.
 

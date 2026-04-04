@@ -19,7 +19,8 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.storage.models import Preset
+from api.storage.models import Preset, User
+from api.web.auth import get_current_user
 from api.web.deps import get_db_session
 from api.web.schemas import (
     CreatePresetRequest,
@@ -47,6 +48,7 @@ def _preset_to_response(preset: Preset) -> PresetResponse:
 async def list_presets(
     type: str | None = None,
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> list[PresetResponse]:
     """List all presets, optionally filtered by type."""
     stmt = select(Preset)
@@ -61,6 +63,7 @@ async def list_presets(
 async def create_preset(
     body: CreatePresetRequest,
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> PresetResponse:
     """Create a new preset."""
     preset = Preset(
@@ -79,6 +82,7 @@ async def create_preset(
 async def get_preset(
     preset_id: int,
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> PresetResponse:
     """Get a single preset by ID."""
     preset = await session.get(Preset, preset_id)
@@ -92,6 +96,7 @@ async def update_preset(
     preset_id: int,
     body: UpdatePresetRequest,
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> PresetResponse:
     """Update an existing preset (partial update)."""
     preset = await session.get(Preset, preset_id)
@@ -111,6 +116,7 @@ async def update_preset(
 async def delete_preset(
     preset_id: int,
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> Response:
     """Delete a preset."""
     preset = await session.get(Preset, preset_id)
@@ -126,6 +132,7 @@ async def delete_preset(
 async def set_default(
     preset_id: int,
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> PresetResponse:
     """Mark a preset as default, clearing other defaults of the same type."""
     preset = await session.get(Preset, preset_id)

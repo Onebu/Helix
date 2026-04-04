@@ -17,12 +17,13 @@ from api.web.deps import (
     get_db_session,
     get_registry,
 )
+from api.web.auth import get_current_user
 from api.web.event_bus import EventBus
 from api.web.run_manager import RunManager
 from api.config.models import GeneConfig
 from api.dataset.service import DatasetService
 from api.registry.service import PromptRegistry
-from api.storage.models import Base
+from api.storage.models import Base, User
 
 
 @pytest.fixture
@@ -80,6 +81,10 @@ def app(db_engine) -> FastAPI:
     application.dependency_overrides[get_dataset_service] = lambda: test_dataset_service
     application.dependency_overrides[get_db_session] = _override_db_session
     application.dependency_overrides[_get_session_factory] = lambda: session_factory
+
+    # Override auth with a fixed test user
+    _test_user = User(id=1, username="testuser", hashed_password="", is_active=True)
+    application.dependency_overrides[get_current_user] = lambda: _test_user
 
     # Manually set up app state that lifespan would create
     # (ASGI transport does not invoke lifespan events)

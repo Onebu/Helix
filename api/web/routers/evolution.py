@@ -13,6 +13,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from api.config.models import GenerationConfig
 from api.evolution.models import EvolutionConfig
+from api.storage.models import User
+from api.web.auth import get_current_user
 from api.web.deps import get_config, get_dataset_service, get_registry
 from api.web.schemas import EvolutionRunRequest, EvolutionRunStatus
 
@@ -26,6 +28,7 @@ async def start_evolution(
     config=Depends(get_config),
     registry=Depends(get_registry),
     dataset_service=Depends(get_dataset_service),
+    user: User = Depends(get_current_user),
 ):
     """Start an evolution run as a background task.
 
@@ -146,7 +149,7 @@ async def start_evolution(
 
 
 @router.get("/active", response_model=list[EvolutionRunStatus])
-async def list_active_runs(request: Request):
+async def list_active_runs(request: Request, user: User = Depends(get_current_user)):
     """List all currently active (in-memory) evolution runs."""
     run_manager = request.app.state.run_manager
     all_statuses = run_manager.list_runs()
@@ -154,7 +157,7 @@ async def list_active_runs(request: Request):
 
 
 @router.post("/{run_id}/stop")
-async def stop_evolution(run_id: str, request: Request):
+async def stop_evolution(run_id: str, request: Request, user: User = Depends(get_current_user)):
     """Cancel a running evolution task."""
     run_manager = request.app.state.run_manager
     stopped = await run_manager.stop_run(run_id)
@@ -164,7 +167,7 @@ async def stop_evolution(run_id: str, request: Request):
 
 
 @router.get("/{run_id}/status", response_model=EvolutionRunStatus)
-async def get_run_status(run_id: str, request: Request):
+async def get_run_status(run_id: str, request: Request, user: User = Depends(get_current_user)):
     """Get the current status of an evolution run."""
     run_manager = request.app.state.run_manager
     status = run_manager.get_status(run_id)

@@ -14,7 +14,9 @@ from fastapi.responses import JSONResponse
 
 from api.config.models import GeneConfig
 from api.gateway.factory import create_provider
+from api.storage.models import User
 from api.types import ModelRole
+from api.web.auth import get_current_user
 from api.web.deps import get_config
 from api.web.schemas import WizardGenerateRequest, WizardGenerateResponse
 
@@ -112,6 +114,7 @@ def _clean_yaml_response(text: str) -> str:
 async def generate_template(
     body: WizardGenerateRequest,
     config: GeneConfig = Depends(get_config),
+    user: User = Depends(get_current_user),
 ) -> WizardGenerateResponse:
     """Generate a prompt template from wizard answers using the meta model."""
     try:
