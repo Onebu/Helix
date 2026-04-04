@@ -139,7 +139,14 @@ docker compose -f docker-compose.dev.yml up      # Dev with hot reload
 - Frontend: path aliases via `@/` (maps to `src/`). shadcn/ui components in `components/ui/`.
 - Tests: `pytest-asyncio` with `asyncio_mode = "auto"`. API tests use `httpx.ASGITransport` with dependency overrides and `FakeGitStorage`.
 - **When modifying or creating features/bug fixes, always review and update related test files.** Ensure tests pass before committing.
-- **Cross-component compatibility**: The core engine (`api/evolution/`, `api/evaluation/`, `api/gateway/`, `api/config/`, `api/dataset/`, `api/registry/models.py`) is shared by three consumers: web API, CLI, and direct Python imports. When changing core models or `run_evolution()` signature, verify compatibility with both `api/web/routers/` (web) and `cli/helix_cli/` (CLI). When changing API endpoints, check if the CLI or frontend uses the affected routes.
+- **Cross-component sync (MANDATORY)**: Helix has three tightly coupled parts — backend (`api/`), frontend (`frontend/`), and CLI (`cli/`). **Before finalizing any change**, check all three for sync:
+  - **Backend model/endpoint changes** → update frontend API client (`npm run generate-client`), update CLI if it calls the affected code
+  - **API response shape changes** → verify frontend components consuming that data, verify CLI output formatting
+  - **Core engine changes** (`api/evolution/`, `api/evaluation/`, `api/gateway/`, `api/config/`, `api/dataset/`, `api/registry/`) → these are shared by web API, CLI, and direct Python imports — verify all three consumers
+  - **Frontend route/page changes** → check if CLI references those routes (e.g. `helix show` opening web URLs)
+  - **Config/env var changes** → update all three: backend settings, frontend `.env.example`, CLI config loader
+  - **Database schema changes** → check `ensure_columns()` migration, verify CLI still works against updated DB
+  - **Never merge a change that breaks another part.** Run both `pytest` and `npm run test` before submitting.
 
 ## Packages (PyPI)
 
