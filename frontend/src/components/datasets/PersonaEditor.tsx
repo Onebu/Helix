@@ -67,6 +67,7 @@ export function PersonaEditor({ persona, onSave, onCancel }: PersonaEditorProps)
   // Auto-generate id from role when creating (unless user manually edited)
   useEffect(() => {
     if (!isEditing && !idManuallyEdited && role) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- id is both auto-derived from role and independently user-editable
       setId(toKebabCase(role))
     }
   }, [role, isEditing, idManuallyEdited])

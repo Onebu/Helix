@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { listPromptsApiPromptsGet, startEvolutionApiEvolutionStartPost } from '../../client/sdk.gen'
 import type { EvolutionRunRequest, EvolutionRunStatus, PromptSummary } from '../../client/types.gen'
@@ -74,7 +74,12 @@ export default function RunConfigForm({ promptId: propPromptId, onRunStarted }: 
 
   // Preset state (string to support both built-in names and "custom-{id}" keys)
   const [activePreset, setActivePreset] = useState<string | null>(null)
-  const [isCustom, setIsCustom] = useState(false)
+  const isCustom = useMemo(() => {
+    if ((BUILT_IN_PRESET_NAMES as readonly string[]).includes(activePreset as string)) {
+      return !isPresetMatch(config, activePreset as PresetName)
+    }
+    return false
+  }, [config, activePreset])
 
   const { data: prompts, isLoading: promptsLoading } = useQuery({
     queryKey: ['prompts'],
@@ -87,7 +92,6 @@ export default function RunConfigForm({ promptId: propPromptId, onRunStarted }: 
     if (!presetName) {
       // Cleared selection (e.g. deleted active custom preset)
       setActivePreset(null)
-      setIsCustom(false)
       return
     }
     setConfig((prev) => ({
@@ -96,7 +100,6 @@ export default function RunConfigForm({ promptId: propPromptId, onRunStarted }: 
       prompt_id: prev.prompt_id,
     }))
     setActivePreset(presetName)
-    setIsCustom(false)
 
     // Auto-enable mutation toggle if preset has non-null structural_mutation_probability
     const smp = (values as Record<string, unknown>).structural_mutation_probability as number | null | undefined
@@ -106,17 +109,6 @@ export default function RunConfigForm({ promptId: propPromptId, onRunStarted }: 
       setMutationEnabled(false)
     }
   }
-
-  // Custom detection: watch config changes and compare to active preset
-  useEffect(() => {
-    if (activePreset === null) return
-    // Only use isPresetMatch for built-in presets (it expects PresetName)
-    if ((BUILT_IN_PRESET_NAMES as readonly string[]).includes(activePreset)) {
-      const matches = isPresetMatch(config, activePreset as PresetName)
-      setIsCustom(!matches)
-    }
-    // For custom presets, we don't track "modified" state — they are user-owned
-  }, [config, activePreset])
 
   // When mutation toggle is turned off, set structural_mutation_probability to null
   function handleMutationToggle(checked: boolean) {

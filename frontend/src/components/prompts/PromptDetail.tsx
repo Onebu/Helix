@@ -830,9 +830,8 @@ function TestCasesPreviewSection({ promptId }: { promptId: string }) {
     enabled: !!promptId,
   })
 
-  const cases = (casesResp?.data || []) as unknown as TestCasePreview[]
-
   const { total, critical, normal, low } = useMemo(() => {
+    const cases = (casesResp?.data || []) as unknown as TestCasePreview[]
     let crit = 0
     let norm = 0
     let lo = 0
@@ -843,7 +842,7 @@ function TestCasesPreviewSection({ promptId }: { promptId: string }) {
       else norm++
     }
     return { total: cases.length, critical: crit, normal: norm, low: lo }
-  }, [cases])
+  }, [casesResp?.data])
 
   return (
     <div className="rounded-lg border border-border bg-card overflow-hidden">

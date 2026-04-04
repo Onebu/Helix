@@ -339,6 +339,7 @@ export default function PromptConfigPage() {
   useEffect(() => {
     if (config) {
       const f = configToForm(config)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setForm(f)
       setServerForm(f)
     }

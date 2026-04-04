@@ -12,6 +12,7 @@ interface MutationStatsProps {
  * Port of Python lineage/renderer.py:compute_mutation_stats.
  * Computes per-mutation-type effectiveness from lineage events.
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function computeMutationStats(
   events: LineageNode[],
 ): Map<string, MutationStat> {

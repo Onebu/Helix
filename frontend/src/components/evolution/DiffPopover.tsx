@@ -58,7 +58,7 @@ export function DiffPopover({
 
     const pairDiff = computePairDiff(candidate, parent)
     return { type: 'diff' as const, pairDiff }
-  }, [candidateId, candidate, lineageIndex])
+  }, [candidate, lineageIndex])
 
   // No template data
   if (!candidate || candidate.template === undefined) {

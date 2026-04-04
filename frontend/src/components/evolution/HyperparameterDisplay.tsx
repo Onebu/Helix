@@ -34,6 +34,7 @@ const HYPER_GROUPS: Record<string, string[]> = {
  * Default values from EvolutionConfig + GenerationConfig.
  * Used to determine which values are overrides.
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export const HYPER_DEFAULTS: Record<string, number | string | null> = {
   generations: 10,
   conversations_per_island: 5,
@@ -69,6 +70,7 @@ export const HYPER_DEFAULTS: Record<string, number | string | null> = {
  * Check if a hyperparameter value differs from its default.
  * Uses epsilon comparison for floats.
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function isOverride(key: string, value: unknown): boolean {
   const defaultVal = HYPER_DEFAULTS[key]
 

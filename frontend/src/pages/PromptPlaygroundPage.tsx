@@ -210,7 +210,7 @@ export default function PromptPlaygroundPage() {
           })
         })
     }
-  }, [detail?.template_variables, promptId])
+  }, [detail, promptId])
 
   // Debounced save variables to API on change (replaces localStorage)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)

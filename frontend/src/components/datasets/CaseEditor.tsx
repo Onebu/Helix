@@ -50,6 +50,7 @@ export function CaseEditor({ promptId, existingCase, open, onOpenChange }: CaseE
   useEffect(() => {
     if (open) {
       if (existingCase) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setName(existingCase.name || '')
         setDescription(existingCase.description || '')
         setTier(existingCase.tier || 'normal')

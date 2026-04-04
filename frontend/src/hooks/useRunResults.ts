@@ -54,6 +54,7 @@ export function useRunResults(runId: string, refetchKey?: number): UseRunResults
 
   useEffect(() => {
     if (!runId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLoading(false);
       return;
     }

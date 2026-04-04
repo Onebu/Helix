@@ -211,6 +211,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (settings && !form) {
       const f = settingsToForm(settings)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setForm(f)
       setServerForm(f)
     }

@@ -23,6 +23,7 @@ export default function PromptEvolutionPage() {
   useEffect(() => {
     const runParam = searchParams.get('run')
     if (runParam && runParam !== activeRunId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveRunId(runParam)
       setSearchParams({}, { replace: true })
     }

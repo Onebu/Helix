@@ -45,6 +45,7 @@ export function MockEditor({ promptId, toolNames }: { promptId: string; toolName
 
   useEffect(() => {
     if (savedMocks && !dirty) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMocks(savedMocks)
     }
   }, [savedMocks, dirty])
