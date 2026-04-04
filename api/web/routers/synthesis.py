@@ -19,7 +19,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from api.dataset.models import TestCase
 from api.registry.tool_resolver import DEFAULT_MAX_TOOL_STEPS
+from api.storage.models import User
 from api.synthesis.models import SynthesisConfig
+from api.web.auth import get_current_user
 from api.web.deps import get_config, get_dataset_service, get_registry
 from api.web.schemas import (
     ReviewRequest,
@@ -41,6 +43,7 @@ async def start_synthesis(
     config=Depends(get_config),
     registry=Depends(get_registry),
     dataset_service=Depends(get_dataset_service),
+    user: User = Depends(get_current_user),
 ):
     """Start a synthesis run as a background task.
 
@@ -433,6 +436,7 @@ async def review_conversations(
     body: ReviewRequest,
     request: Request,
     dataset_service=Depends(get_dataset_service),
+    user: User = Depends(get_current_user),
 ):
     """Submit approve/reject decisions for synthesized conversations.
 

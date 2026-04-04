@@ -13,8 +13,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 
 from api.storage.database import Database
-from api.storage.models import EvolutionRun
+from api.storage.models import EvolutionRun, User
 from api.storage.queries import get_evolution_history
+from api.web.auth import get_current_user
 from api.web.deps import get_database
 from api.web.schemas import EvolutionRunHistory, RunResultsResponse
 
@@ -79,6 +80,7 @@ def _build_run_results_response(run: EvolutionRun) -> RunResultsResponse:
 async def get_history(
     prompt_id: str,
     db: Database = Depends(get_database),
+    user: User = Depends(get_current_user),
 ) -> list[EvolutionRunHistory]:
     """List evolution runs for a prompt, ordered by most recent first."""
     session = await db.get_session()
@@ -93,6 +95,7 @@ async def get_history(
 async def get_run_results_by_uuid(
     run_uuid: str,
     db: Database = Depends(get_database),
+    user: User = Depends(get_current_user),
 ) -> RunResultsResponse:
     """Get full results for a completed evolution run by its UUID.
 
@@ -115,6 +118,7 @@ async def get_run_results_by_uuid(
 async def get_run_detail(
     run_id: int,
     db: Database = Depends(get_database),
+    user: User = Depends(get_current_user),
 ) -> EvolutionRunHistory:
     """Get a single evolution run by its database ID."""
     session = await db.get_session()
@@ -133,6 +137,7 @@ async def get_run_detail(
 async def get_run_results(
     run_id: int,
     db: Database = Depends(get_database),
+    user: User = Depends(get_current_user),
 ) -> RunResultsResponse:
     """Get full results for a completed evolution run.
 

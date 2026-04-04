@@ -20,7 +20,8 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.storage.models import Persona
+from api.storage.models import Persona, User
+from api.web.auth import get_current_user
 from api.web.deps import get_db_session
 from api.web.schemas import (
     CreatePersonaRequest,
@@ -154,6 +155,7 @@ async def _materialize_defaults_to_db(session: AsyncSession, prompt_id: str) -> 
 async def list_personas(
     prompt_id: str,
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> list[PersonaProfileResponse]:
     """List all personas for a prompt. Returns defaults if no DB rows exist."""
     return await _load_personas_from_db(session, prompt_id)
@@ -168,6 +170,7 @@ async def create_persona(
     prompt_id: str,
     body: CreatePersonaRequest,
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> PersonaProfileResponse:
     """Create a new persona for a prompt."""
     # Materialize defaults first (if needed)
@@ -206,6 +209,7 @@ async def update_persona(
     persona_id: str,
     body: UpdatePersonaRequest,
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> PersonaProfileResponse:
     """Update an existing persona's fields (partial update)."""
     stmt = select(Persona).where(
@@ -233,6 +237,7 @@ async def delete_persona(
     prompt_id: str,
     persona_id: str,
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> Response:
     """Delete a persona by ID."""
     stmt = select(Persona).where(
@@ -257,6 +262,7 @@ async def delete_persona(
 async def export_personas(
     prompt_id: str,
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> list[PersonaProfileResponse]:
     """Export all personas as a JSON array."""
     return await _load_personas_from_db(session, prompt_id)
@@ -270,6 +276,7 @@ async def import_personas(
     prompt_id: str,
     body: list[CreatePersonaRequest],
     session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(get_current_user),
 ) -> ImportPersonasResponse:
     """Import personas from a JSON array, skipping existing IDs."""
     # Materialize defaults first

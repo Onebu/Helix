@@ -23,6 +23,8 @@ web = [
     "aiosqlite>=0.22.1",
     "asyncpg>=0.29.0",
     "cryptography>=42.0",
+    "PyJWT>=2.8.0",
+    "passlib[bcrypt]>=1.7.4",
 ]
 
 [dependency-groups]

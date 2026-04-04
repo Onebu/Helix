@@ -144,8 +144,15 @@ def create_app() -> FastAPI:
     async def health():
         return {"status": "ok"}
 
+    # --- Auth: disabled by default for local single-user mode ---
+    from api.web.auth import get_current_user, get_current_user_noop, is_auth_disabled
+
+    if is_auth_disabled():
+        application.dependency_overrides[get_current_user] = get_current_user_noop
+
     # --- Routers ---
     from api.web.routers import (
+        auth,
         datasets,
         evolution,
         format_guides,
@@ -161,6 +168,7 @@ def create_app() -> FastAPI:
         ws,
     )
 
+    application.include_router(auth.router, prefix="/api/auth", tags=["auth"])
     application.include_router(prompts.router, prefix="/api/prompts", tags=["prompts"])
     application.include_router(datasets.router, prefix="/api/prompts", tags=["datasets"])
     application.include_router(evolution.router, prefix="/api/evolution", tags=["evolution"])

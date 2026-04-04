@@ -21,6 +21,8 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from api.dataset.models import PriorityTier, TestCase
 from api.dataset.service import DatasetService
+from api.storage.models import User
+from api.web.auth import get_current_user
 from api.web.deps import get_dataset_service
 from api.web.schemas import (
     TestCaseCreateRequest,
@@ -50,6 +52,7 @@ def _case_to_response(case: TestCase) -> TestCaseResponse:
 async def list_cases(
     prompt_id: str,
     service: DatasetService = Depends(get_dataset_service),
+    user: User = Depends(get_current_user),
 ) -> list[TestCaseResponse]:
     """List all test cases for a prompt."""
     cases = await service.list_cases(prompt_id)
@@ -61,6 +64,7 @@ async def get_case(
     prompt_id: str,
     case_id: str,
     service: DatasetService = Depends(get_dataset_service),
+    user: User = Depends(get_current_user),
 ) -> TestCaseResponse:
     """Get a single test case by ID."""
     case = await service.get_case(prompt_id, case_id)
@@ -72,6 +76,7 @@ async def add_case(
     prompt_id: str,
     body: TestCaseCreateRequest,
     service: DatasetService = Depends(get_dataset_service),
+    user: User = Depends(get_current_user),
 ) -> TestCaseResponse:
     """Add a new test case to a prompt's dataset."""
     case = TestCase(
@@ -96,6 +101,7 @@ async def update_case(
     case_id: str,
     body: TestCaseUpdateRequest,
     service: DatasetService = Depends(get_dataset_service),
+    user: User = Depends(get_current_user),
 ) -> TestCaseResponse:
     """Update an existing test case (partial update)."""
     existing = await service.get_case(prompt_id, case_id)
@@ -119,6 +125,7 @@ async def delete_case(
     prompt_id: str,
     case_id: str,
     service: DatasetService = Depends(get_dataset_service),
+    user: User = Depends(get_current_user),
 ) -> None:
     """Delete a test case."""
     await service.delete_case(prompt_id, case_id)
@@ -129,6 +136,7 @@ async def import_cases(
     prompt_id: str,
     file: UploadFile = File(...),
     service: DatasetService = Depends(get_dataset_service),
+    user: User = Depends(get_current_user),
 ) -> list[TestCaseResponse]:
     """Import test cases from an uploaded JSON or YAML file."""
     # Enforce 10 MB upload limit
