@@ -208,7 +208,9 @@ function EvolutionDashboardRun({ runId }: EvolutionDashboardProps) {
       const normalized = events.map((event) => event.normalizedScore)
       rows.push({
         generation,
-        label: t('evolution.generationLabel', { generation: generation + 1 }),
+        label: generation === 0
+          ? t('evolution.initialization')
+          : t('evolution.generationLabel', { generation: generation + 1 }),
         bestFitness: Math.max(...scores),
         avgFitness: scores.reduce((sum, value) => sum + value, 0) / scores.length,
         bestNormalized: Math.max(...normalized),

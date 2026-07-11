@@ -127,7 +127,7 @@ describe('SummaryCards', () => {
 })
 
 describe('Workbench summary hardening', () => {
-  it('reflows island summaries from one to two to four columns', () => {
+  it('reflows island summaries from their container width instead of viewport breakpoints', () => {
     const { container } = render(
       <IslandsSummary
         candidates={[]}
@@ -138,10 +138,9 @@ describe('Workbench summary hardening', () => {
     )
 
     expect(container.querySelector('.grid')).toHaveClass(
-      'grid-cols-1',
-      'sm:grid-cols-2',
-      'xl:grid-cols-4',
+      '[grid-template-columns:repeat(auto-fit,minmax(min(100%,11rem),1fr))]',
     )
+    expect(container.querySelector('.grid')).not.toHaveClass('xl:grid-cols-4')
   })
 
   it('keeps the stop reason label translated in every shipped locale', () => {

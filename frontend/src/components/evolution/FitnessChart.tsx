@@ -127,7 +127,8 @@ export default function FitnessChart({ data, isLive = false }: FitnessChartProps
               strokeWidth={1.5}
               label={{
                 value: t('evolution.perfectFitnessBaseline'),
-                position: 'right',
+                position: 'insideTopLeft',
+                offset: 8,
                 fill: SCORE_POSITIVE,
                 fontSize: 11,
               }}

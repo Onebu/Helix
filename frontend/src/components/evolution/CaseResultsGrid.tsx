@@ -26,6 +26,10 @@ function truncate(text: string, max: number): string {
   return text.slice(0, max) + '...'
 }
 
+function reasonPreview(reason: string): string {
+  return reason.replace(/^(?:\s*\[(?:pass|fail)\])+\s*/i, '')
+}
+
 function PassIcon({ caseId }: { caseId: string }) {
   const { t } = useTranslation()
   return (
@@ -342,7 +346,8 @@ export default function CaseResultsGrid({
                       <span className={`mr-1 font-semibold ${c.passed ? 'text-score-positive' : 'text-score-negative'}`}>
                         [{c.passed ? t('evolution.pass') : t('evolution.fail')}]
                       </span>
-                      {truncate(c.reason, 50)}
+                      {' '}
+                      {truncate(reasonPreview(c.reason), 50)}
                     </td>
                   </tr>
                   {isExpanded && (

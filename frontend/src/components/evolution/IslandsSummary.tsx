@@ -86,18 +86,18 @@ export default function IslandsSummary({ candidates, migrations, islandCount, st
         )}
       </div>
 
-      <div className="grid flex-1 grid-cols-1 content-start gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid flex-1 content-start gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,11rem),1fr))]">
         {islands.map((island) => (
           <div
             key={island.island}
             className="min-w-0 space-y-2 rounded-md border border-border/60 bg-background/50 px-3 py-3"
           >
             {/* Island header */}
-            <div className="flex items-center justify-between">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
               <span className="text-xs font-semibold text-foreground">
                 {t('evolution.island', { index: island.island + 1 })}
               </span>
-              <span className="text-xs text-muted-foreground">
+              <span className="whitespace-nowrap text-xs text-muted-foreground">
                 {t('evolution.candidateCount', { count: island.candidateCount })}
               </span>
             </div>
@@ -123,10 +123,10 @@ export default function IslandsSummary({ candidates, migrations, islandCount, st
                 </div>
 
                 {/* Avg + rejected row */}
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{t('evolution.avgFitness')} {island.avgFitness.toFixed(2)}</span>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 text-xs text-muted-foreground">
+                  <span className="min-w-0">{t('evolution.avgFitness')} {island.avgFitness.toFixed(2)}</span>
                   {island.rejectedCount > 0 && (
-                    <span className="text-destructive/70">
+                    <span className="whitespace-nowrap text-right text-destructive/70">
                       {t('evolution.rejectedCount', { count: island.rejectedCount })}
                     </span>
                   )}

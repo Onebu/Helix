@@ -12,7 +12,16 @@ vi.mock('recharts', () => ({
   CartesianGrid: () => null,
   Tooltip: () => null,
   Legend: () => null,
-  ReferenceLine: ({ y }: { y: number }) => <div data-testid="reference-line" data-y={y}>Zero Line</div>,
+  ReferenceLine: ({ y, label }: { y: number; label?: { position?: string; offset?: number } }) => (
+    <div
+      data-testid="reference-line"
+      data-y={y}
+      data-label-position={label?.position}
+      data-label-offset={label?.offset}
+    >
+      Zero Line
+    </div>
+  ),
 }))
 
 const sampleGenerations: GenerationData[] = [
@@ -55,6 +64,13 @@ describe('FitnessChart', () => {
     const refLine = screen.getByTestId('reference-line')
     expect(refLine).toBeInTheDocument()
     expect(refLine).toHaveAttribute('data-y', '0')
+  })
+
+  it('keeps the perfect-baseline label inside the plot away from the right axis', () => {
+    render(<FitnessChart data={sampleGenerations} />)
+    const refLine = screen.getByTestId('reference-line')
+    expect(refLine).toHaveAttribute('data-label-position', 'insideTopLeft')
+    expect(refLine).toHaveAttribute('data-label-offset', '8')
   })
 
   it('filters out NaN data points before rendering', () => {

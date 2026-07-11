@@ -60,7 +60,9 @@ vi.mock('../components/evolution/FitnessChart', () => ({
   default: () => <div data-testid="fitness-chart">FitnessChart</div>,
 }))
 vi.mock('../components/evolution/GenerationTable', () => ({
-  default: () => <div data-testid="generation-table">GenerationTable</div>,
+  default: ({ data }: { data: Array<{ label?: string }> }) => (
+    <div data-testid="generation-table">{data.map((row) => row.label).join(', ')}</div>
+  ),
 }))
 vi.mock('../components/evolution/DiffViewer', () => ({
   default: () => <div data-testid="diff-viewer">DiffViewer</div>,
@@ -403,5 +405,43 @@ describe('EvolutionDashboard transition', () => {
     const inspector = screen.getByRole('complementary', { name: 'Candidate inspector' })
     expect(within(inspector).getByText('seed-2')).toBeInTheDocument()
     expect(within(inspector).getByText('-2.000')).toBeInTheDocument()
+  })
+
+  it('labels pre-generation variants as initialization and reports a completed count', () => {
+    Object.assign(mockEvolutionState, {
+      ...mockInitialState,
+      status: 'complete',
+      summary: { ...mockInitialState.summary },
+    })
+    mockRunResults.data = {
+      promptId: null,
+      lineageEvents: [
+        {
+          candidateId: 'seed', parentIds: [], generation: 0, island: 0,
+          fitnessScore: -2, normalizedScore: 0.5, rejected: false,
+          mutationType: 'seed', survived: true, template: 'Seed prompt',
+        },
+        {
+          candidateId: 'initial-variant', parentIds: ['seed'], generation: 0, island: 0,
+          fitnessScore: -1, normalizedScore: 0.8, rejected: false,
+          mutationType: 'seed_variant', survived: true, template: 'Improved prompt',
+        },
+      ],
+      caseResults: [], seedCaseResults: [], generationRecords: [],
+      bestCandidateId: 'initial-variant', bestTemplate: 'Improved prompt',
+      totalCostUsd: 0.01, bestFitnessScore: -1, bestNormalizedScore: 0.8,
+      generationsCompleted: 0, terminationReason: 'perfect_fitness',
+      metaModel: null, targetModel: null, judgeModel: null,
+      metaProvider: null, targetProvider: null, judgeProvider: null,
+      hyperparameters: null,
+    }
+
+    renderWithProviders(<EvolutionDashboard runId="initialization-run" />)
+
+    expect(screen.getByText('Generations completed').parentElement).toHaveTextContent(
+      'Generations completed 0',
+    )
+    expect(screen.getByTestId('generation-table')).toHaveTextContent('Seed, Initialization')
+    expect(screen.getByTestId('generation-table')).not.toHaveTextContent('Gen 1')
   })
 })

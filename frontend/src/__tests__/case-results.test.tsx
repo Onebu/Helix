@@ -181,4 +181,15 @@ describe('CaseResultsGrid', () => {
     const reasonCell = row?.querySelector('td:last-child')
     expect(reasonCell).toHaveAttribute('title', longReason)
   })
+
+  it('shows one status marker in the table when the scorer reason already includes markers', () => {
+    const rawReason = '[PASS] [PASS] Exact required token found'
+    render(<CaseResultsGrid caseResults={[makeCase({ caseId: 'tagged-reason', reason: rawReason })]} />)
+
+    const row = screen.getByText('tagged-reason').closest('tr')
+    const reasonCell = row?.querySelector('td:last-child')
+    expect(reasonCell).toHaveTextContent('[PASS] Exact required token found')
+    expect(reasonCell).not.toHaveTextContent('[PASS] [PASS]')
+    expect(reasonCell).toHaveAttribute('title', rawReason)
+  })
 })
