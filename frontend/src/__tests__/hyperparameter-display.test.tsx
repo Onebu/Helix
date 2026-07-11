@@ -2,13 +2,34 @@ import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import HyperparameterDisplay, { isOverride } from '../components/evolution/HyperparameterDisplay'
-
+import i18n from '../i18n'
 describe('HyperparameterDisplay', () => {
+  it('uses the public RCC rounds label', async () => {
+    render(<HyperparameterDisplay hyperparameters={{ rcc_rounds: 3 }} />)
+
+    await userEvent.click(screen.getByText('All parameters'))
+
+    expect(screen.getByText('RCC rounds')).toBeInTheDocument()
+  })
+
+  it('localizes the RCC rounds label', async () => {
+    await i18n.changeLanguage('es')
+    try {
+      render(<HyperparameterDisplay hyperparameters={{ rcc_rounds: 3 }} />)
+
+      await userEvent.click(screen.getByText('All parameters'))
+
+      expect(screen.getByText('Rondas RCC')).toBeInTheDocument()
+    } finally {
+      await i18n.changeLanguage('en')
+    }
+  })
+
   it('renders category headings when params from each group are present', async () => {
     const hyperparameters = {
       generations: 10,
       conversations_per_island: 5,
-      n_seq: 3,
+      rcc_rounds: 3,
       sample_size: 50,
       n_islands: 4,
       n_emigrate: 5,
@@ -127,7 +148,7 @@ describe('HyperparameterDisplay', () => {
     const hyperparameters = {
       generations: 10,
       conversations_per_island: 5,
-      n_seq: 3,
+      rcc_rounds: 3,
       n_parents: 5,
       temperature: 1.0,
       structural_mutation_probability: 0.2,

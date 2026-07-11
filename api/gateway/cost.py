@@ -4,9 +4,12 @@ Provides a static pricing table for common OpenRouter and Gemini direct API mode
 token-based cost estimation, and an in-memory cost aggregator.
 """
 
+import asyncio
 import logging
+import math
 from collections import defaultdict
 
+from api.exceptions import BudgetExhaustedError, ConfigError
 from api.types import LLMResponse, ModelRole
 
 logger = logging.getLogger(__name__)
@@ -75,6 +78,23 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
 }
 
 
+def resolve_pricing_model(model: str) -> str | None:
+    """Return the existing pricing key for a supported provider-name alias."""
+    if not isinstance(model, str):
+        return None
+    if model in MODEL_PRICING:
+        return model
+
+    candidates: list[str] = []
+    for provider in ("openai", "google"):
+        prefix = f"{provider}/"
+        if model.startswith(prefix):
+            candidates.append(model[len(prefix):])
+        else:
+            candidates.append(f"{prefix}{model}")
+    return next((candidate for candidate in candidates if candidate in MODEL_PRICING), None)
+
+
 def estimate_cost_from_tokens(model: str, input_tokens: int, output_tokens: int) -> float | None:
     """Estimate cost from token counts using static pricing table.
 
@@ -86,9 +106,10 @@ def estimate_cost_from_tokens(model: str, input_tokens: int, output_tokens: int)
     Returns:
         Estimated cost in USD, or None if model is not in pricing table.
     """
-    pricing = MODEL_PRICING.get(model)
-    if pricing is None:
+    pricing_model = resolve_pricing_model(model)
+    if pricing_model is None:
         return None
+    pricing = MODEL_PRICING[pricing_model]
 
     cost = (input_tokens * pricing["input_per_million"] / 1_000_000) + (
         output_tokens * pricing["output_per_million"] / 1_000_000
@@ -104,11 +125,78 @@ class CostTracker:
     Persistence to DB happens separately when the evolution run completes.
     """
 
-    def __init__(self):
+    def __init__(self, budget_cap_usd: float | None = None):
+        if budget_cap_usd is not None and (
+            isinstance(budget_cap_usd, bool)
+            or not isinstance(budget_cap_usd, (int, float))
+            or not math.isfinite(budget_cap_usd)
+            or budget_cap_usd < 0
+        ):
+            raise ValueError("budget_cap_usd must be a finite nonnegative number")
         self._records: list[LLMResponse] = []
+        self.budget_cap_usd = budget_cap_usd
+        self._reserved_usd = 0.0
+        self._active_reservations = 0
+        self._lock = asyncio.Lock()
+
+    def validate_models(self, models: list[str]) -> None:
+        """Reject unpriced models only when calls must obey a budget cap."""
+        if self.budget_cap_usd is None:
+            return
+        for model in models:
+            if resolve_pricing_model(model) is None:
+                raise ConfigError(f"Model pricing unavailable for budgeted run: {model}")
+
+    async def reserve(self, model: str, input_tokens: int, output_tokens: int) -> float:
+        """Atomically reserve the estimated cost of an upcoming call."""
+        self._validate_positive_tokens(input_tokens, "input_tokens")
+        self._validate_positive_tokens(output_tokens, "output_tokens")
+        estimate = estimate_cost_from_tokens(model, input_tokens, output_tokens)
+        if estimate is None:
+            if self.budget_cap_usd is not None:
+                raise ConfigError(f"Model pricing unavailable for budgeted run: {model}")
+            estimate = 0.0
+
+        async with self._lock:
+            spent = self.summary()["total_cost_usd"]
+            if (
+                self.budget_cap_usd is not None
+                and spent + self._reserved_usd + estimate > self.budget_cap_usd
+            ):
+                raise BudgetExhaustedError(
+                    "Budget cap would be exceeded by the next LLM call"
+                )
+            self._reserved_usd += estimate
+            self._active_reservations += 1
+        return estimate
+
+    async def reconcile(self, reservation: float, response: LLMResponse | None) -> None:
+        """Release a reservation and record one successful response."""
+        if (
+            isinstance(reservation, bool)
+            or not isinstance(reservation, (int, float))
+            or not math.isfinite(reservation)
+            or reservation < 0
+        ):
+            raise ValueError("reservation must be a finite nonnegative number")
+        async with self._lock:
+            if self._active_reservations == 0:
+                raise ValueError("reconcile called with no active reservation")
+            if reservation > self._reserved_usd and not math.isclose(
+                reservation, self._reserved_usd, abs_tol=1e-12
+            ):
+                raise ValueError("reservation exceeds currently reserved total")
+            self._reserved_usd = max(0.0, self._reserved_usd - reservation)
+            if self._reserved_usd < 1e-12:
+                self._reserved_usd = 0.0
+            self._active_reservations -= 1
+            if response is not None:
+                self._validate_response(response)
+                self._records.append(response)
 
     def record(self, response: LLMResponse) -> None:
         """Record a single LLM call response."""
+        self._validate_response(response)
         self._records.append(response)
 
     def summary(self) -> dict:
@@ -154,4 +242,26 @@ class CostTracker:
 
     def reset(self) -> None:
         """Clear all recorded data."""
+        if self._active_reservations > 0:
+            raise RuntimeError("Cannot reset CostTracker with active reservations")
         self._records.clear()
+
+    @staticmethod
+    def _validate_positive_tokens(value: int, name: str) -> None:
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValueError(f"{name} tokens must be a positive integer")
+
+    @staticmethod
+    def _validate_response(response: LLMResponse) -> None:
+        for name in ("input_tokens", "output_tokens"):
+            value = getattr(response, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"response {name} must be a nonnegative integer")
+        cost = response.cost_usd
+        if (
+            isinstance(cost, bool)
+            or not isinstance(cost, (int, float))
+            or not math.isfinite(cost)
+            or cost < 0
+        ):
+            raise ValueError("response cost_usd must be a finite nonnegative number")

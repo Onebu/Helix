@@ -13,7 +13,7 @@ import json
 import logging
 from typing import Any
 
-from api.evaluation.models import CaseResult
+from api.evaluation.models import CaseResult, EvaluationInvalidError
 from api.gateway.protocol import LLMProvider
 from api.registry.tool_resolver import normalize_tool_call
 from api.types import LLMResponse, ModelRole
@@ -367,7 +367,8 @@ class BehaviorJudgeScorer:
     ) -> CaseResult:
         ctx = context or {}
         case_id = ctx.get("case_id", "")
-        criteria = expected.get("behavior", [])
+        raw_behavior = expected.get("behavior", [])
+        criteria = [raw_behavior] if isinstance(raw_behavior, str) else list(raw_behavior or [])
 
         if not criteria:
             return CaseResult(
@@ -393,24 +394,12 @@ class BehaviorJudgeScorer:
         )
 
         try:
-            judge_response = await self._client.chat_completion(
-                messages=messages,
-                model=self._judge_model,
-                role=ModelRole.JUDGE,
-                temperature=0,
-                response_format=_BEHAVIOR_JUDGE_SCHEMA,
-                **(self._extra_kwargs or {}),
-            )
-            evaluations = self._parse_response(judge_response, criteria)
-        except _JudgeParsingError as exc:
-            return CaseResult(
-                case_id=case_id,
-                score=-2,
-                passed=False,
-                reason=f"Judge parsing failed: {exc}",
-                expected=expected,
-                actual_content=actual_response.content,
-            )
+            evaluations = await self._score_once(messages, criteria)
+        except _JudgeParsingError:
+            try:
+                evaluations = await self._score_once(messages, criteria)
+            except _JudgeParsingError as exc:
+                raise EvaluationInvalidError(f"Invalid judge response: {exc}") from exc
 
         failed_count = sum(1 for e in evaluations if not e["passed"])
         score_val = -2 * failed_count  # -2 penalty per failed criterion
@@ -431,6 +420,21 @@ class BehaviorJudgeScorer:
             actual_tool_calls=actual_response.tool_calls,
             criteria_results=evaluations,
         )
+
+    async def _score_once(
+        self,
+        messages: list[dict[str, str]],
+        criteria: list[str],
+    ) -> list[dict[str, Any]]:
+        judge_response = await self._client.chat_completion(
+            messages=messages,
+            model=self._judge_model,
+            role=ModelRole.JUDGE,
+            temperature=0,
+            response_format=_BEHAVIOR_JUDGE_SCHEMA,
+            **(self._extra_kwargs or {}),
+        )
+        return self._parse_response(judge_response, criteria)
 
     @staticmethod
     def _build_judge_prompt(
@@ -524,15 +528,38 @@ class BehaviorJudgeScorer:
         except (json.JSONDecodeError, TypeError) as exc:
             raise _JudgeParsingError(f"Invalid JSON: {exc}") from exc
 
-        raw_evaluations = data.get("evaluations", [])
+        if not isinstance(data, dict):
+            raise _JudgeParsingError("Judge response must be a JSON object")
+        if "evaluations" not in data:
+            raise _JudgeParsingError("Judge response is missing evaluations")
+
+        raw_evaluations = data["evaluations"]
+        if not isinstance(raw_evaluations, list):
+            raise _JudgeParsingError("Judge evaluations must be a list")
+
+        for index, raw_eval in enumerate(raw_evaluations):
+            if not isinstance(raw_eval, dict):
+                raise _JudgeParsingError(f"Judge evaluation {index} must be an object")
+
+            missing = {"criterion", "passed", "reason"} - raw_eval.keys()
+            if missing:
+                raise _JudgeParsingError(
+                    f"Judge evaluation {index} is missing {', '.join(sorted(missing))}"
+                )
+            if not isinstance(raw_eval["criterion"], str):
+                raise _JudgeParsingError(f"Judge evaluation {index} criterion must be a string")
+            if type(raw_eval["passed"]) is not bool:
+                raise _JudgeParsingError(f"Judge evaluation {index} passed must be a boolean")
+            if not isinstance(raw_eval["reason"], str):
+                raise _JudgeParsingError(f"Judge evaluation {index} reason must be a string")
 
         # If count matches, use positional mapping
         if len(raw_evaluations) == len(criteria):
             return [
                 {
                     "criterion": criteria[i],
-                    "passed": bool(raw_evaluations[i].get("passed", False)),
-                    "reason": str(raw_evaluations[i].get("reason", "")),
+                    "passed": raw_evaluations[i]["passed"],
+                    "reason": raw_evaluations[i]["reason"],
                 }
                 for i in range(len(criteria))
             ]
@@ -545,8 +572,8 @@ class BehaviorJudgeScorer:
                 if idx not in matched and raw_criterion.strip().lower() == c.strip().lower():
                     matched[idx] = {
                         "criterion": c,
-                        "passed": bool(raw_eval.get("passed", False)),
-                        "reason": str(raw_eval.get("reason", "")),
+                        "passed": raw_eval["passed"],
+                        "reason": raw_eval["reason"],
                     }
                     break
 

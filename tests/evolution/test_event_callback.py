@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
-
 from api.config.models import GenerationConfig
 from api.dataset.models import TestCase
 from api.evaluation.evaluator import FitnessEvaluator
@@ -35,18 +34,23 @@ from api.evolution.rcc import RCCEngine
 from api.evolution.selector import BoltzmannSelector
 from api.gateway.cost import CostTracker
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_report(score: float, rejected: bool = False) -> EvaluationReport:
+def _make_report(
+    score: float, rejected: bool = False, passed: bool | None = None
+) -> EvaluationReport:
     """Create an EvaluationReport with a controlled fitness score."""
     return EvaluationReport(
         fitness=FitnessScore(score=score, rejected=rejected),
         case_results=[
-            CaseResult(case_id="c1", score=score, passed=score >= 0.5),
+            CaseResult(
+                case_id="c1",
+                score=score,
+                passed=score >= 0.5 if passed is None else passed,
+            ),
         ],
         total_cases=1,
         cost_summary={
@@ -65,6 +69,16 @@ def _make_candidate(
     c = Candidate(template=template, generation=generation, parent_ids=[])
     c.fitness_score = fitness
     return c
+
+
+def _make_evaluated_candidate(
+    template: str = "Hello {{ x }}",
+    fitness: float = -1.0,
+    passed: bool | None = None,
+) -> Candidate:
+    candidate = _make_candidate(template=template, fitness=fitness)
+    candidate.evaluation = _make_report(fitness, passed=passed)
+    return candidate
 
 
 def _build_island_evolver(
@@ -100,7 +114,7 @@ def _build_island_evolver(
 
         async def unique_rcc(*args, **kwargs):
             rcc_count_holder[0] += 1
-            return _make_candidate(template=f"evolved_{rcc_count_holder[0]} {{{{ x }}}}")
+            return [_make_candidate(template=f"evolved_{rcc_count_holder[0]} {{{{ x }}}}")]
 
         rcc.run_conversation = AsyncMock(side_effect=unique_rcc)
     if mutator is None:
@@ -118,7 +132,7 @@ def _build_island_evolver(
         cost_tracker=cost_tracker,
         original_template="Hello {{ x }}",
         anchor_variables={"x"},
-        cases=[TestCase(chat_history=[{"role": "user", "content": "hi"}])],
+        cases=[TestCase(id="c1", chat_history=[{"role": "user", "content": "hi"}])],
         target_model="test/model",
         generation_config=GenerationConfig(),
         purpose="test",
@@ -159,7 +173,7 @@ def _build_evolution_loop(
 
         async def unique_rcc(*args, **kwargs):
             rcc_count_holder[0] += 1
-            return _make_candidate(template=f"evolved_{rcc_count_holder[0]} {{{{ x }}}}")
+            return [_make_candidate(template=f"evolved_{rcc_count_holder[0]} {{{{ x }}}}")]
 
         rcc.run_conversation = AsyncMock(side_effect=unique_rcc)
     if mutator is None:
@@ -177,7 +191,7 @@ def _build_evolution_loop(
         cost_tracker=cost_tracker,
         original_template="Hello {{ x }}",
         anchor_variables={"x"},
-        cases=[TestCase(chat_history=[{"role": "user", "content": "hi"}])],
+        cases=[TestCase(id="c1", chat_history=[{"role": "user", "content": "hi"}])],
         target_model="test/model",
         generation_config=GenerationConfig(),
         purpose="test",
@@ -239,7 +253,7 @@ async def test_evolution_loop_emits_candidate_evaluated():
     loop = _build_evolution_loop(event_callback=callback)
 
     # Use step_generation to test candidate_evaluated events
-    seed = _make_candidate(template="Hello {{ x }}", fitness=0.5)
+    seed = _make_evaluated_candidate()
     population = [seed]
     loop.set_seed_results([CaseResult(case_id="c1", score=0.5, passed=True)])
 
@@ -253,6 +267,10 @@ async def test_evolution_loop_emits_candidate_evaluated():
     assert "fitness_score" in data
     assert "rejected" in data
     assert "mutation_type" in data
+    assert data["parent_ids"] == []
+    assert data["template"] == "evolved_1 {{ x }}"
+    assert data["cases_passed"] == 1
+    assert data["total_cases"] == 1
 
 
 async def test_candidate_evaluated_includes_island_index():
@@ -264,7 +282,7 @@ async def test_candidate_evaluated_includes_island_index():
 
     loop = _build_evolution_loop(event_callback=callback)
 
-    seed = _make_candidate(template="Hello {{ x }}", fitness=0.5)
+    seed = _make_evaluated_candidate()
     population = [seed]
     loop.set_seed_results([CaseResult(case_id="c1", score=0.5, passed=True)])
 
@@ -273,6 +291,45 @@ async def test_candidate_evaluated_includes_island_index():
     candidate_evals = [e for e in events if e[0] == "candidate_evaluated"]
     assert len(candidate_evals) >= 1
     assert candidate_evals[0][1]["island"] == 3
+
+
+async def test_seed_and_seed_variant_events_include_full_evaluation_evidence():
+    events: list[tuple[str, dict]] = []
+
+    async def callback(event_type: str, data: dict) -> None:
+        events.append((event_type, data))
+
+    evaluator = AsyncMock(spec=FitnessEvaluator)
+    evaluator.evaluate = AsyncMock(return_value=_make_report(-1.0))
+    evolver = _build_island_evolver(
+        config=EvolutionConfig(
+            generations=1,
+            conversations_per_island=1,
+            rcc_rounds=1,
+            n_islands=2,
+            n_emigrate=0,
+            reset_interval=0,
+            n_seed_variants=1,
+            structural_mutation_probability=0.0,
+            pr_no_parents=0.0,
+        ),
+        evaluator=evaluator,
+        event_callback=callback,
+    )
+
+    await evolver.run()
+
+    initialization_events = [
+        data
+        for event_type, data in events
+        if event_type == "candidate_evaluated"
+        and data["mutation_type"] in {"seed", "seed_variant"}
+    ]
+    assert any(data["mutation_type"] == "seed_variant" for data in initialization_events)
+    assert all(isinstance(data["parent_ids"], list) for data in initialization_events)
+    assert all(data["template"] for data in initialization_events)
+    assert all(data["cases_passed"] == 0 for data in initialization_events)
+    assert all(data["total_cases"] == 1 for data in initialization_events)
 
 
 # ---------------------------------------------------------------------------
@@ -334,16 +391,83 @@ async def test_island_evolver_emits_evolution_complete():
     async def callback(event_type: str, data: dict) -> None:
         events.append((event_type, data))
 
-    evolver = _build_island_evolver(event_callback=callback)
+    evaluator = AsyncMock(spec=FitnessEvaluator)
+    evaluator.evaluate = AsyncMock(return_value=_make_report(-1.0))
+    evolver = _build_island_evolver(evaluator=evaluator, event_callback=callback)
     await evolver.run()
 
     evo_complete = [e for e in events if e[0] == "evolution_complete"]
     assert len(evo_complete) == 1
     data = evo_complete[0][1]
-    assert "termination_reason" in data
+    assert data["termination_reason"] == "generations_complete"
     assert "best_fitness" in data
     assert "total_cost_usd" in data
     assert "generations_completed" in data
+
+
+async def test_perfect_seed_emits_one_evolution_complete():
+    events: list[tuple[str, dict]] = []
+
+    async def callback(event_type: str, data: dict) -> None:
+        events.append((event_type, data))
+
+    evaluator = AsyncMock(spec=FitnessEvaluator)
+    evaluator.evaluate = AsyncMock(return_value=_make_report(0.0, passed=True))
+    evolver = _build_island_evolver(evaluator=evaluator, event_callback=callback)
+
+    await evolver.run()
+
+    terminal = [data for event_type, data in events if event_type == "evolution_complete"]
+    assert len(terminal) == 1
+    assert terminal[0]["termination_reason"] == "perfect_fitness"
+    assert terminal[0]["generations_completed"] == 0
+
+
+async def test_initialization_budget_stop_emits_one_evolution_complete():
+    events: list[tuple[str, dict]] = []
+
+    async def callback(event_type: str, data: dict) -> None:
+        events.append((event_type, data))
+
+    evaluator = AsyncMock(spec=FitnessEvaluator)
+    evaluator.evaluate = AsyncMock(return_value=_make_report(-1.0))
+    evolver = _build_island_evolver(evaluator=evaluator, event_callback=callback)
+    evolver._initialize_populations = AsyncMock(return_value=True)
+
+    await evolver.run()
+
+    terminal = [data for event_type, data in events if event_type == "evolution_complete"]
+    assert len(terminal) == 1
+    assert terminal[0]["termination_reason"] == "budget_exhausted"
+    assert terminal[0]["generations_completed"] == 0
+
+
+async def test_perfect_initialized_candidate_emits_one_evolution_complete():
+    events: list[tuple[str, dict]] = []
+
+    async def callback(event_type: str, data: dict) -> None:
+        events.append((event_type, data))
+
+    evaluator = AsyncMock(spec=FitnessEvaluator)
+    evaluator.evaluate = AsyncMock(return_value=_make_report(-1.0))
+    evolver = _build_island_evolver(evaluator=evaluator, event_callback=callback)
+    perfect = _make_evaluated_candidate(
+        template="perfect {{ x }}", fitness=0.0, passed=True
+    )
+
+    async def initialize(_seed: Candidate) -> bool:
+        evolver._island_populations[0] = [perfect]
+        return False
+
+    evolver._initialize_populations = AsyncMock(side_effect=initialize)
+
+    await evolver.run()
+
+    terminal = [data for event_type, data in events if event_type == "evolution_complete"]
+    assert len(terminal) == 1
+    assert terminal[0]["termination_reason"] == "perfect_fitness"
+    assert terminal[0]["best_fitness"] == 0.0
+    assert terminal[0]["generations_completed"] == 0
 
 
 # ---------------------------------------------------------------------------

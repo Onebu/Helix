@@ -34,4 +34,11 @@ describe('GenerationTable', () => {
     render(<GenerationTable data={[]} />)
     expect(screen.getByText('Waiting for data...')).toBeInTheDocument()
   })
+
+  it('preserves the accessible full value of long generation labels', () => {
+    const longLabel = 'Generation with an unusually long imported identifier'
+    render(<GenerationTable data={[{ ...sampleGenerations[0], label: longLabel }]} />)
+
+    expect(screen.getByTitle(longLabel)).toHaveTextContent(longLabel)
+  })
 })

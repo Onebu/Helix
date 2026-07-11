@@ -10,18 +10,16 @@ as non-regression verification -- they confirm the fix holds.
 import re
 from pathlib import Path
 
-
 # ---------------------------------------------------------------------------
-# Reconstruct _build_thinking_kwargs logic from evolve.py (lines 190-201).
-# The real function is a nested closure inside run_evolution(), so we replicate
-# it here for direct unit testing.
+# Reconstruct the runner's nested _build_thinking_kwargs helper so provider
+# inference kwargs can be verified directly.
 # ---------------------------------------------------------------------------
 
 
 def _build_thinking_kwargs(thinking_config: dict | None, role_name: str) -> dict:
     """Build extra_body thinking kwargs for a given role.
 
-    Mirrors the logic in src/helix/cli/commands/evolve.py.
+    Mirrors the provider-kwargs behavior in api.evolution.runner.run_evolution.
     Budget <= 0 is intentionally omitted to prevent Gemini 2.5 400 errors.
     """
     if not thinking_config or role_name not in thinking_config:

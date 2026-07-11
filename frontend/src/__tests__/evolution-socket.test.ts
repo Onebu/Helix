@@ -46,7 +46,7 @@ describe('evolutionReducer', () => {
     expect(state1.generations).toHaveLength(1)
     expect(state1.generations[0]).toEqual({
       generation: 1,
-      label: 'Gen 1',
+      label: '1',
       bestFitness: 0.5,
       avgFitness: 0.3,
       bestNormalized: -0.5,
@@ -73,7 +73,7 @@ describe('evolutionReducer', () => {
     })
 
     expect(state2.generations).toHaveLength(2)
-    expect(state2.generations[1].label).toBe('Gen 2')
+    expect(state2.generations[1].label).toBe('2')
     expect(state2.summary.generationsCompleted).toBe(2)
 
     // Third generation
@@ -93,7 +93,7 @@ describe('evolutionReducer', () => {
     })
 
     expect(state3.generations).toHaveLength(3)
-    expect(state3.generations[2].label).toBe('Gen 3')
+    expect(state3.generations[2].label).toBe('3')
     expect(state3.summary.generationsCompleted).toBe(3)
   })
 
@@ -106,6 +106,10 @@ describe('evolutionReducer', () => {
       rejected: false,
       mutation_type: 'rcc',
       island: 0,
+      parent_ids: ['parent-1', 'parent-2'],
+      template: `candidate ${i}`,
+      cases_passed: 11,
+      total_cases: 12,
     })
 
     // Add single candidate
@@ -115,6 +119,12 @@ describe('evolutionReducer', () => {
     })
     expect(state1.candidates).toHaveLength(1)
     expect(state1.candidates[0].candidateId).toBe('cand-0')
+    expect(state1.candidates[0]).toMatchObject({
+      parentIds: ['parent-1', 'parent-2'],
+      template: 'candidate 0',
+      casesPassed: 11,
+      totalCases: 12,
+    })
 
     // Fill to 500 candidates
     let state = initialState
@@ -163,6 +173,24 @@ describe('evolutionReducer', () => {
     expect(state.summary.bestFitness).toBe(0.95)
     expect(state.summary.totalCostUsd).toBe(1.23)
     expect(state.summary.generationsCompleted).toBe(5)
+  })
+
+  it.each([
+    ['error', 'failed'],
+    ['cancelled', 'cancelled'],
+    ['budget_exhausted', 'budget_exhausted'],
+  ] as const)('maps terminal reason %s to status %s', (terminationReason, status) => {
+    const state = evolutionReducer(
+      { ...initialState, status: 'running' },
+      {
+        type: 'evolution_complete',
+        data: {
+          termination_reason: terminationReason,
+        },
+      },
+    )
+
+    expect(state.status).toBe(status)
   })
 
   it('Test 5: tracks seedFitness from first candidate_evaluated with generation=0', () => {
@@ -360,7 +388,7 @@ describe('evolutionReducer', () => {
       generations: [
         {
           generation: 1,
-          label: 'Gen 1',
+          label: '1',
           bestFitness: 0.5,
           avgFitness: 0.3,
           bestNormalized: -0.5,

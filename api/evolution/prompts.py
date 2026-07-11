@@ -11,6 +11,7 @@ Prompts:
     AUTHOR_SYSTEM_PROMPT: Instructs the author to revise the template.
     AUTHOR_USER_PROMPT: Provides critic analysis + template + required variables.
     FRESH_GENERATION_PROMPT: Generates a template from scratch (no-parent case).
+    DIVERSE_RESET_PROMPT: Selects a requested number of diverse candidate IDs.
 """
 
 CRITIC_SYSTEM_PROMPT = """\
@@ -28,10 +29,16 @@ must work WITHIN the existing variable names.
 The prompt is being optimized for: {purpose}"""
 
 CRITIC_USER_PROMPT = """\
-Here is the current prompt template being evaluated:
+Here is the evidence from every selected parent:
+
+<parent_evidence>
+{parent_evidence}
+</parent_evidence>
+
+Here is the current prompt template to critique and improve:
 
 <prompt_template>
-{template}
+{current_template}
 </prompt_template>
 
 Here are the test cases where the prompt FAILED:
@@ -105,3 +112,12 @@ Create a well-structured prompt template that:
 4. Includes any necessary context or constraints
 
 Return ONLY the prompt template inside <revised_template> and </revised_template> delimiters."""
+
+DIVERSE_RESET_PROMPT = """\
+Select {count} prompt candidates that together provide the strongest and most diverse reset set.
+
+Candidates:
+{candidates}
+
+Return exactly one comma-separated list of candidate IDs inside <candidate_ids> and
+</candidate_ids>. Return IDs from the candidate list only, with no duplicates and no other text."""

@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { FileText, ChevronLeft, ChevronRight, Wand2, Dna, Settings, Globe, Menu, X, Sun, Moon, Monitor } from 'lucide-react'
+import { FileText, ChevronLeft, ChevronRight, Wand2, Dna, Settings, Globe, Menu, Sun, Moon, Monitor } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 import { useTheme } from '@/hooks/useTheme'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
 
 const LANGUAGES = [
   { value: 'en', label: 'English' },
@@ -24,8 +26,9 @@ function CollapsedLink({ to, label, children }: { to: string; label: string; chi
       <TooltipTrigger asChild>
         <NavLink
           to={to}
+          aria-label={label}
           className={cn(
-            'flex h-10 w-10 items-center justify-center rounded-md transition-colors',
+            'flex h-11 w-11 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none',
             isActive
               ? 'bg-primary/15 text-primary ring-1 ring-primary/30'
               : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
@@ -58,6 +61,7 @@ function SidebarContent({ collapsed, setCollapsed, onNavClick }: { collapsed: bo
 
   const themeIcon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor
   const ThemeIcon = themeIcon
+  const themeLabel = t(`sidebar.${theme}`)
 
   // i18n.language can include region (e.g. "en-GB") — normalize to base code for matching
   const baseLang = LANGUAGES.find((l) => l.value === i18n.language)
@@ -90,14 +94,14 @@ function SidebarContent({ collapsed, setCollapsed, onNavClick }: { collapsed: bo
           size="icon"
           onClick={() => setCollapsed(!collapsed)}
           aria-label={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
-          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+          className="h-11 w-11 text-muted-foreground hover:text-foreground"
         >
           {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </Button>
       </div>
 
       {/* Navigation */}
-      <nav className={cn('flex-1 py-2', collapsed ? '' : 'px-2')} aria-label="Main navigation">
+      <nav className={cn('flex-1 py-2', collapsed ? '' : 'px-2')} aria-label={t('sidebar.mainNavigation')}>
         <ul className={cn('flex flex-col', collapsed ? 'items-center gap-2' : 'gap-1')}>
           <li>
             {collapsed ? (
@@ -110,7 +114,7 @@ function SidebarContent({ collapsed, setCollapsed, onNavClick }: { collapsed: bo
                 onClick={onNavClick}
                 className={({ isActive }) =>
                   cn(
-                    'flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors',
+                    'flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none',
                     isActive
                       ? 'bg-primary/15 text-primary ring-1 ring-primary/30'
                       : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
@@ -133,7 +137,7 @@ function SidebarContent({ collapsed, setCollapsed, onNavClick }: { collapsed: bo
                 onClick={onNavClick}
                 className={({ isActive }) =>
                   cn(
-                    'flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors',
+                    'flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none',
                     isActive
                       ? 'bg-primary/15 text-primary ring-1 ring-primary/30'
                       : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
@@ -159,23 +163,24 @@ function SidebarContent({ collapsed, setCollapsed, onNavClick }: { collapsed: bo
               <TooltipTrigger asChild>
                 <button
                   onClick={cycleTheme}
-                  aria-label={`Theme: ${theme}`}
-                  className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+                  aria-label={t('sidebar.currentTheme', { theme: themeLabel })}
+                  className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
                 >
-                  <ThemeIcon className="h-5 w-5" />
+                  <ThemeIcon className="h-5 w-5" aria-hidden="true" />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="right">
-                Theme: {theme}
+                {t('sidebar.currentTheme', { theme: themeLabel })}
               </TooltipContent>
             </Tooltip>
           ) : (
             <button
               onClick={cycleTheme}
-              className="flex h-10 w-full items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+              aria-label={t('sidebar.currentTheme', { theme: themeLabel })}
+              className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
             >
               <ThemeIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <span className="capitalize">{theme}</span>
+              <span>{themeLabel}</span>
             </button>
           )}
         </div>
@@ -188,9 +193,9 @@ function SidebarContent({ collapsed, setCollapsed, onNavClick }: { collapsed: bo
                 <button
                   onClick={cycleLanguage}
                   aria-label={`${t('sidebar.language')}: ${currentLangLabel}`}
-                  className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+                  className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
                 >
-                  <Globe className="h-5 w-5" />
+                  <Globe className="h-5 w-5" aria-hidden="true" />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="right">
@@ -198,13 +203,13 @@ function SidebarContent({ collapsed, setCollapsed, onNavClick }: { collapsed: bo
               </TooltipContent>
             </Tooltip>
           ) : (
-            <div className="flex h-10 items-center gap-3 rounded-md px-3">
+            <div className="flex min-h-11 items-center gap-3 rounded-md px-3">
               <Globe className="h-4 w-4 text-muted-foreground shrink-0" aria-hidden="true" />
               <Select
                 value={baseLang}
                 onValueChange={(value) => i18n.changeLanguage(value)}
               >
-                <SelectTrigger className="h-8 flex-1 text-sm border-0 bg-transparent px-0 shadow-none focus:ring-0">
+                <SelectTrigger aria-label={t('sidebar.language')} className="h-10 flex-1 text-sm border-0 bg-transparent px-0 shadow-none focus:ring-2 focus:ring-ring">
                   <SelectValue placeholder={currentLangLabel} />
                 </SelectTrigger>
                 <SelectContent>
@@ -230,8 +235,8 @@ function SidebarContent({ collapsed, setCollapsed, onNavClick }: { collapsed: bo
               to="/settings"
               onClick={onNavClick}
               className={({ isActive }) =>
-                cn(
-                  'flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors',
+                  cn(
+                  'flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none',
                   isActive
                     ? 'bg-primary/15 text-primary ring-1 ring-primary/30'
                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
@@ -249,9 +254,11 @@ function SidebarContent({ collapsed, setCollapsed, onNavClick }: { collapsed: bo
 }
 
 export function Sidebar() {
+  const { t } = useTranslation()
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const location = useLocation()
+  const isDesktop = useMediaQuery('(min-width: 768px)')
 
   // Close mobile sidebar on route change
   useEffect(() => {
@@ -259,53 +266,43 @@ export function Sidebar() {
     setMobileOpen(false)
   }, [location.pathname])
 
+  useEffect(() => {
+    if (isDesktop) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMobileOpen(false)
+    }
+  }, [isDesktop])
+
   return (
     <TooltipProvider delayDuration={0}>
-      {/* Mobile hamburger button */}
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={() => setMobileOpen(true)}
-        aria-label="Open navigation menu"
-        className="fixed top-3 left-3 z-50 md:hidden h-10 w-10"
-      >
-        <Menu className="h-5 w-5" />
-      </Button>
-
-      {/* Mobile overlay */}
-      {mobileOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm md:hidden"
-          onClick={() => setMobileOpen(false)}
-          aria-hidden="true"
-        />
-      )}
-
-      {/* Mobile sidebar drawer */}
-      <aside
-        className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-56 flex-col border-r border-sidebar-border bg-sidebar transition-transform duration-200 ease-in-out md:hidden',
-          mobileOpen ? 'translate-x-0' : '-translate-x-full'
-        )}
-      >
-        <div className="absolute top-3 right-3">
+      {!isDesktop && <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+        <SheetTrigger asChild>
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => setMobileOpen(false)}
-            aria-label="Close navigation menu"
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            aria-label={t('sidebar.openNavigation')}
+            className="fixed start-3 top-3 z-40 size-11 md:hidden"
           >
-            <X className="h-4 w-4" />
+            <Menu className="h-5 w-5" aria-hidden="true" />
           </Button>
-        </div>
-        <SidebarContent collapsed={false} setCollapsed={setCollapsed} onNavClick={() => setMobileOpen(false)} />
-      </aside>
+        </SheetTrigger>
+        <SheetContent
+          side="left"
+          closeLabel={t('sidebar.closeNavigation')}
+          className="flex w-64 max-w-[16rem] flex-col bg-sidebar p-0 motion-reduce:transition-none motion-reduce:animate-none md:hidden"
+        >
+          <SheetHeader className="sr-only">
+            <SheetTitle>{t('sidebar.navigation')}</SheetTitle>
+            <SheetDescription>{t('sidebar.navigationDescription')}</SheetDescription>
+          </SheetHeader>
+          <SidebarContent collapsed={false} setCollapsed={setCollapsed} onNavClick={() => setMobileOpen(false)} />
+        </SheetContent>
+      </Sheet>}
 
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          'hidden md:flex flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 ease-in-out',
+          'hidden md:flex flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 ease-in-out motion-reduce:transition-none',
           collapsed ? 'w-14' : 'w-56'
         )}
       >

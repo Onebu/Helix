@@ -6,7 +6,7 @@ import AppShell from './components/layout/AppShell'
 import { PromptLayout } from './components/layout/PromptLayout'
 import PromptsPage from './pages/PromptsPage'
 import { isAuthenticated } from './lib/auth'
-import { getApiBaseUrl } from './lib/api-config'
+import { apiJson } from './lib/api-fetch'
 
 // Route-based code splitting: each page loads only when navigated to
 const PromptTemplatePage = lazy(() => import('./pages/PromptTemplatePage'))
@@ -31,8 +31,11 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   const [authRequired, setAuthRequired] = useState<boolean | null>(null)
 
   useEffect(() => {
-    fetch(`${getApiBaseUrl()}/api/auth/status`)
-      .then(r => r.json())
+    apiJson<{ auth_required: boolean }>(
+      '/api/auth/status',
+      {},
+      { auth: false, redirectOnUnauthorized: false },
+    )
       .then(data => setAuthRequired(data.auth_required))
       .catch(() => setAuthRequired(false))
   }, [])

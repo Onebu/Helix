@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 
 # --- Settings schemas ---
 
@@ -235,6 +235,7 @@ class TestCaseResponse(BaseModel):
     tags: list[str]
     chat_history: list[dict]
     tools: list[dict] | None = None
+    source_metadata: dict[str, Any] = Field(default_factory=dict)
     validation_warnings: list[str] = []
 
 
@@ -249,6 +250,7 @@ class TestCaseCreateRequest(BaseModel):
     expected_output: dict | None = None
     tier: str = "normal"
     tags: list[str] = []
+    source_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class TestCaseUpdateRequest(BaseModel):
@@ -262,6 +264,7 @@ class TestCaseUpdateRequest(BaseModel):
     expected_output: dict | None = None
     tier: str | None = None
     tags: list[str] | None = None
+    source_metadata: dict[str, Any] | None = None
 
 
 # --- Persona schemas ---
@@ -383,8 +386,17 @@ class EvolutionRunRequest(BaseModel):
     temperature: float | None = None
     structural_mutation_probability: float | None = None
 
+    # Evolution profile fields (None = resolve from the selected profile)
+    evolution_profile: Literal["cost_controlled", "paper_reference"] = "cost_controlled"
+    rcc_rounds: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices("rcc_rounds", "n_seq"),
+    )
+    retain_intermediate_children: bool | None = None
+    max_retries: int | None = None
+    promotions_per_island: int | None = None
+
     # Advanced evolution parameters (None = use EvolutionConfig defaults)
-    n_seq: int | None = None
     population_cap: int | None = None
     n_emigrate: int | None = None
     reset_interval: int | None = None

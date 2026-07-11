@@ -13,6 +13,10 @@ export interface CandidateEvaluatedData {
   rejected: boolean;
   mutation_type: string;
   island: number;
+  parent_ids?: string[];
+  template?: string;
+  cases_passed?: number;
+  total_cases?: number;
 }
 
 export interface MigrationEventData {
@@ -37,10 +41,10 @@ export interface GenerationCompleteData {
 
 export interface EvolutionCompleteData {
   termination_reason: string;
-  best_fitness: number;
+  best_fitness?: number;
   best_normalized?: number;
-  total_cost_usd: number;
-  generations_completed: number;
+  total_cost_usd?: number;
+  generations_completed?: number;
   error?: string | null;
 }
 
@@ -75,6 +79,10 @@ export interface CandidateData {
   rejected: boolean;
   mutationType: string;
   island: number;
+  parentIds?: string[];
+  template?: string;
+  casesPassed?: number;
+  totalCases?: number;
 }
 
 export interface MigrationData {
@@ -101,6 +109,9 @@ export type EvolutionStatus =
   | 'connecting'
   | 'running'
   | 'complete'
+  | 'failed'
+  | 'cancelled'
+  | 'budget_exhausted'
   | 'error';
 
 export interface EvolutionState {
@@ -171,6 +182,8 @@ export interface LineageNode {
   mutationType: string;
   survived: boolean;
   template?: string;
+  casesPassed?: number;
+  totalCases?: number;
 }
 
 export interface CaseResultData {

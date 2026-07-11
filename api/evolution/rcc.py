@@ -1,19 +1,18 @@
 """RCC (Refinement through Critical Conversation) engine.
 
-Implements the core evolution mechanism from the Mind Evolution paper:
-a critic identifies prompt failures and an author revises the prompt.
-Each conversation runs N_seq turns of critic-then-author, with each
-turn building on the previous revision.
-
-The engine uses the configured meta-model (ModelRole.META) for both
-critic and author steps, keeping it separate from the target model
-used for fitness evaluation.
+The critic receives evidence from every selected parent, and each author draft
+is validated before it can leave the engine. Cost-controlled conversations
+retain only the final draft; callback-driven conversations evaluate and retain
+every round.
 """
 
 from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Awaitable, Callable
+
+from jinja2 import TemplateSyntaxError
 
 from api.evaluation.models import CaseResult
 from api.evaluation.validator import TemplateValidator
@@ -23,6 +22,7 @@ from api.evolution.prompts import (
     AUTHOR_USER_PROMPT,
     CRITIC_SYSTEM_PROMPT,
     CRITIC_USER_PROMPT,
+    DIVERSE_RESET_PROMPT,
     FRESH_GENERATION_PROMPT,
 )
 from api.gateway.cost import CostTracker
@@ -31,31 +31,38 @@ from api.types import ModelRole
 
 logger = logging.getLogger(__name__)
 
-# Regex for extracting template from <revised_template> delimiters
 _TEMPLATE_RE = re.compile(
     r"<revised_template>\s*(.*?)\s*</revised_template>",
     re.DOTALL,
 )
+_CANDIDATE_IDS_RE = re.compile(
+    r"<candidate_ids>\s*(.*?)\s*</candidate_ids>",
+    re.DOTALL,
+)
+
+DraftEvaluator = Callable[[Candidate], Awaitable[Candidate]]
+
+
+def _format_parent_evidence(parents: list[Candidate]) -> str:
+    """Format every actual parent and its evaluation for the critic."""
+    blocks: list[str] = []
+    for index, parent in enumerate(parents, start=1):
+        results = parent.evaluation.case_results if parent.evaluation else []
+        blocks.append(
+            "\n".join(
+                [
+                    f"PARENT {index} [{parent.id}] score={parent.fitness_score}",
+                    parent.template,
+                    RCCEngine._format_failing_cases(results),
+                    RCCEngine._format_passing_summary(results),
+                ]
+            )
+        )
+    return "\n\n".join(blocks)
 
 
 class RCCEngine:
-    """Refinement through Critical Conversation engine.
-
-    Runs multi-turn critic-author conversations to evolve prompt templates.
-    Each conversation selects the best parent, runs N_seq turns of
-    critic analysis followed by author revision, and returns a new
-    Candidate with the evolved template.
-
-    If no parents are provided (Pr_no_parents case), generates a fresh
-    candidate from the purpose description alone.
-
-    Args:
-        client: LLM provider for API calls.
-        cost_tracker: Tracker for recording meta-model call costs.
-        validator: Template validator for checking variable preservation.
-        meta_model: OpenRouter model identifier for critic/author calls.
-        max_retries: Maximum retries when author drops required variables.
-    """
+    """Run validated critic-author refinement with a configured meta-model."""
 
     def __init__(
         self,
@@ -66,6 +73,10 @@ class RCCEngine:
         max_retries: int = 3,
         extra_kwargs: dict | None = None,
     ) -> None:
+        if getattr(client, "owns_cost_accounting", False) is True and getattr(
+            client, "cost_tracker", None
+        ) is not cost_tracker:
+            raise ValueError("Accounting provider and RCC must use the same CostTracker")
         self._client = client
         self._cost_tracker = cost_tracker
         self._validator = validator
@@ -79,58 +90,69 @@ class RCCEngine:
         original_template: str,
         anchor_variables: set[str],
         purpose: str,
-        n_seq: int,
+        rcc_rounds: int,
         generation: int,
-    ) -> Candidate:
-        """Run N_seq turns of critic-author refinement.
+        evaluate_draft: DraftEvaluator | None = None,
+    ) -> list[Candidate]:
+        """Return validated drafts produced across the requested RCC rounds.
 
-        If parents is empty (no-parent case), generate a fresh candidate
-        from the purpose description. Otherwise, use the best parent's
-        template as starting point and its evaluation for critic feedback.
-
-        Args:
-            parents: Parent candidates to refine from (empty for fresh generation).
-            original_template: The original template for variable validation.
-            anchor_variables: Variables that must be preserved in the evolved template.
-            purpose: Description of what the prompt is optimized for.
-            n_seq: Number of sequential refinement turns.
-            generation: Generation number for the new candidate.
-
-        Returns:
-            A new Candidate with the evolved template.
+        Fresh generation consumes the first round. With ``evaluate_draft``,
+        every valid round is evaluated, retained, and used as the next round's
+        evidence. Without it, only the final valid draft is retained.
         """
-        if not parents:
-            return await self._generate_fresh(
+        parent_ids = [parent.id for parent in parents]
+        next_parent_ids = list(parent_ids)
+        parent_evidence = (
+            _format_parent_evidence(parents)
+            if parents
+            else "(Fresh generation has no selected parents.)"
+        )
+        drafts: list[Candidate] = []
+        case_results: list[CaseResult] = []
+        first_critic_round = 0
+
+        if parents:
+            current = max(parents, key=lambda candidate: candidate.fitness_score)
+            current_template = current.template
+            if current.evaluation is not None:
+                case_results = current.evaluation.case_results
+        else:
+            if rcc_rounds < 1:
+                return []
+            current_template = await self._generate_fresh(
                 original_template=original_template,
                 anchor_variables=anchor_variables,
                 purpose=purpose,
-                generation=generation,
             )
+            if current_template is None:
+                return []
 
-        # Select best parent by fitness score
-        best_parent = max(parents, key=lambda c: c.fitness_score)
-        current_template = best_parent.template
-
-        # Get case results from best parent's evaluation (if available)
-        case_results: list[CaseResult] = []
-        if best_parent.evaluation is not None:
-            case_results = best_parent.evaluation.case_results
+            candidate = Candidate(
+                template=current_template,
+                generation=generation,
+                parent_ids=[],
+            )
+            if evaluate_draft is not None:
+                candidate = await evaluate_draft(candidate)
+                candidate.parent_ids = []
+                candidate.generation = generation
+                drafts.append(candidate)
+                if candidate.evaluation is not None:
+                    case_results = candidate.evaluation.case_results
+                current_template = candidate.template
+            else:
+                drafts = [candidate]
+            first_critic_round = 1
 
         required_variables_str = ", ".join(sorted(anchor_variables))
 
-        for turn in range(n_seq):
+        for round_index in range(first_critic_round, rcc_rounds):
             logger.debug(
-                "RCC turn %d/%d for generation %d",
-                turn + 1,
-                n_seq,
+                "RCC round %d/%d for generation %d",
+                round_index + 1,
+                rcc_rounds,
                 generation,
             )
-
-            # Format case feedback for critic
-            failing_formatted = self._format_failing_cases(case_results)
-            passing_summary = self._format_passing_summary(case_results)
-
-            # Critic step
             critic_messages = [
                 {
                     "role": "system",
@@ -142,9 +164,10 @@ class RCCEngine:
                 {
                     "role": "user",
                     "content": CRITIC_USER_PROMPT.format(
-                        template=current_template,
-                        failing_cases_formatted=failing_formatted,
-                        passing_cases_summary=passing_summary,
+                        parent_evidence=parent_evidence,
+                        current_template=current_template,
+                        failing_cases_formatted=self._format_failing_cases(case_results),
+                        passing_cases_summary=self._format_passing_summary(case_results),
                         required_variables=required_variables_str,
                     ),
                 },
@@ -155,33 +178,43 @@ class RCCEngine:
                 role=ModelRole.META,
                 **(self._extra_kwargs or {}),
             )
-            self._cost_tracker.record(critic_response)
-            critic_analysis = critic_response.content or ""
-
-            # Author step with retry on variable loss
+            if getattr(self._client, "owns_cost_accounting", False) is not True:
+                self._cost_tracker.record(critic_response)
             revised = await self._author_with_retry(
-                critic_analysis=critic_analysis,
+                critic_analysis=critic_response.content or "",
                 current_template=current_template,
                 original_template=original_template,
                 anchor_variables=anchor_variables,
             )
-
-            if revised is not None:
-                current_template = revised
-            else:
-                # All retries failed -- keep the previous turn's template
+            if revised is None:
                 logger.warning(
-                    "All %d author retries failed on turn %d; keeping previous template",
+                    "All %d author attempts failed on round %d",
                     self._max_retries,
-                    turn + 1,
+                    round_index + 1,
                 )
+                break
 
-        parent_ids = [p.id for p in parents]
-        return Candidate(
-            template=current_template,
-            generation=generation,
-            parent_ids=parent_ids,
-        )
+            candidate = Candidate(
+                template=revised,
+                generation=generation,
+                parent_ids=list(next_parent_ids),
+            )
+            if evaluate_draft is not None:
+                candidate = await evaluate_draft(candidate)
+                candidate.parent_ids = list(next_parent_ids)
+                candidate.generation = generation
+                drafts.append(candidate)
+                if candidate.evaluation is not None:
+                    case_results = candidate.evaluation.case_results
+                else:
+                    case_results = []
+                current_template = candidate.template
+                next_parent_ids = [candidate.id]
+            else:
+                drafts = [candidate]
+                current_template = revised
+
+        return drafts
 
     async def _author_with_retry(
         self,
@@ -190,104 +223,50 @@ class RCCEngine:
         original_template: str,
         anchor_variables: set[str],
     ) -> str | None:
-        """Call author and retry up to max_retries if variables are dropped.
-
-        Returns the revised template if valid, or None if all retries fail.
-        """
+        """Return the first changed, non-empty, syntactically valid revision."""
         required_variables_str = ", ".join(sorted(anchor_variables))
+        feedback: str | None = None
 
         for attempt in range(self._max_retries):
-            if attempt == 0:
-                # First attempt: normal author prompt
-                author_messages = [
-                    {
-                        "role": "system",
-                        "content": AUTHOR_SYSTEM_PROMPT.format(
-                            required_variables=required_variables_str,
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": AUTHOR_USER_PROMPT.format(
-                            critic_analysis=critic_analysis,
-                            template=current_template,
-                            required_variables=required_variables_str,
-                        ),
-                    },
-                ]
-            else:
-                # Retry: add explicit feedback about dropped/renamed variables
-                validation = self._validator.validate_preserved(
-                    original_template,
-                    last_attempt_template,  # noqa: F821 -- assigned in previous iteration
-                    anchor_variables,
-                )
-
-                # Build feedback distinguishing renames from drops
-                feedback_parts = []
-                if validation.renamed_variables:
-                    rename_details = ", ".join(
-                        f"{old} -> {new}" for old, new in validation.renamed_variables.items()
-                    )
-                    feedback_parts.append(
-                        f"You RENAMED these variables: {rename_details}. "
-                        "You MUST use the ORIGINAL variable names, not new names."
-                    )
-
-                # Report remaining dropped variables (not accounted for by renames)
-                dropped = [
-                    v for v in validation.missing_variables if v not in validation.renamed_variables
-                ]
-                if dropped:
-                    dropped_str = ", ".join(dropped)
-                    feedback_parts.append(f"You DROPPED these required variables: {dropped_str}.")
-
-                feedback = " ".join(feedback_parts)
-                feedback += f" Required variables: {required_variables_str}"
-
-                author_messages = [
-                    {
-                        "role": "system",
-                        "content": AUTHOR_SYSTEM_PROMPT.format(
-                            required_variables=required_variables_str,
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": AUTHOR_USER_PROMPT.format(
-                            critic_analysis=critic_analysis,
-                            template=current_template,
-                            required_variables=required_variables_str,
-                        )
-                        + f"\n\nIMPORTANT: {feedback}",
-                    },
-                ]
+            user_prompt = AUTHOR_USER_PROMPT.format(
+                critic_analysis=critic_analysis,
+                template=current_template,
+                required_variables=required_variables_str,
+            )
+            if feedback:
+                user_prompt += f"\n\nIMPORTANT: {feedback}"
 
             author_response = await self._client.chat_completion(
-                messages=author_messages,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": AUTHOR_SYSTEM_PROMPT.format(
+                            required_variables=required_variables_str,
+                        ),
+                    },
+                    {"role": "user", "content": user_prompt},
+                ],
                 model=self._meta_model,
                 role=ModelRole.META,
                 **(self._extra_kwargs or {}),
             )
-            self._cost_tracker.record(author_response)
-
-            last_attempt_template = self._extract_template(author_response.content or "")
-
-            # Validate variable preservation
-            validation = self._validator.validate_preserved(
-                original_template,
-                last_attempt_template,
-                anchor_variables,
+            if getattr(self._client, "owns_cost_accounting", False) is not True:
+                self._cost_tracker.record(author_response)
+            template = self._extract_template(author_response.content or "")
+            feedback = self._template_feedback(
+                original_template=original_template,
+                candidate_template=template,
+                anchor_variables=anchor_variables,
+                current_template=current_template,
             )
-
-            if validation.valid:
-                return last_attempt_template
+            if feedback is None:
+                return template
 
             logger.warning(
-                "Author dropped variables on attempt %d/%d: %s",
+                "Author output invalid on attempt %d/%d: %s",
                 attempt + 1,
                 self._max_retries,
-                validation.missing_variables,
+                feedback,
             )
 
         return None
@@ -297,82 +276,165 @@ class RCCEngine:
         original_template: str,
         anchor_variables: set[str],
         purpose: str,
-        generation: int,
-    ) -> Candidate:
-        """Generate a fresh candidate from purpose description (no-parent case).
-
-        Args:
-            original_template: The original template for variable reference.
-            anchor_variables: Variables that must be present in the new template.
-            purpose: What the prompt is being optimized for.
-            generation: Generation number for the new candidate.
-
-        Returns:
-            A new Candidate with a freshly generated template.
-        """
+    ) -> str | None:
+        """Generate and validate the first no-parent RCC round."""
         required_variables_str = ", ".join(sorted(anchor_variables))
         variable_descriptions = "\n".join(
-            f"- {var}: (used in template)" for var in sorted(anchor_variables)
+            f"- {variable}: (used in template)" for variable in sorted(anchor_variables)
         )
+        feedback: str | None = None
 
-        messages = [
-            {
-                "role": "user",
-                "content": FRESH_GENERATION_PROMPT.format(
-                    purpose=purpose,
-                    required_variables=required_variables_str,
-                    variable_descriptions=variable_descriptions,
-                ),
-            },
+        for attempt in range(self._max_retries):
+            prompt = FRESH_GENERATION_PROMPT.format(
+                purpose=purpose,
+                required_variables=required_variables_str,
+                variable_descriptions=variable_descriptions,
+            )
+            if feedback:
+                prompt += f"\n\nIMPORTANT: {feedback}"
+
+            response = await self._client.chat_completion(
+                messages=[{"role": "user", "content": prompt}],
+                model=self._meta_model,
+                role=ModelRole.META,
+                **(self._extra_kwargs or {}),
+            )
+            if getattr(self._client, "owns_cost_accounting", False) is not True:
+                self._cost_tracker.record(response)
+            template = self._extract_template(response.content or "")
+            feedback = self._template_feedback(
+                original_template=original_template,
+                candidate_template=template,
+                anchor_variables=anchor_variables,
+                current_template=original_template,
+            )
+            if feedback is None:
+                return template
+
+            logger.warning(
+                "Fresh output invalid on attempt %d/%d: %s",
+                attempt + 1,
+                self._max_retries,
+                feedback,
+            )
+
+        return None
+
+    def _template_feedback(
+        self,
+        original_template: str,
+        candidate_template: str,
+        anchor_variables: set[str],
+        current_template: str | None = None,
+    ) -> str | None:
+        """Return retry feedback, or ``None`` when a draft is valid."""
+        if not candidate_template.strip():
+            return "You returned an empty template. Return a complete revised template."
+        if current_template is not None and candidate_template.strip() == current_template.strip():
+            return "You returned the unchanged template. Make a targeted revision."
+
+        try:
+            validation = self._validator.validate_preserved(
+                original_template,
+                candidate_template,
+                anchor_variables,
+            )
+        except TemplateSyntaxError as exc:
+            return f"The template has invalid Jinja2 syntax: {exc}."
+
+        if validation.valid:
+            return None
+
+        feedback_parts: list[str] = []
+        if validation.renamed_variables:
+            rename_details = ", ".join(
+                f"{old} -> {new}" for old, new in validation.renamed_variables.items()
+            )
+            feedback_parts.append(
+                f"You RENAMED these variables: {rename_details}. "
+                "Use the ORIGINAL variable names."
+            )
+        dropped = [
+            variable
+            for variable in validation.missing_variables
+            if variable not in validation.renamed_variables
         ]
+        if dropped:
+            feedback_parts.append(
+                f"You DROPPED these required variables: {', '.join(dropped)}."
+            )
+        feedback_parts.append(f"Required variables: {', '.join(sorted(anchor_variables))}")
+        return " ".join(feedback_parts)
 
+    async def select_diverse(
+        self,
+        candidates: list[Candidate],
+        count: int,
+    ) -> list[Candidate]:
+        """Select validated meta-model IDs or use deterministic score fallback."""
+        target = min(max(count, 0), len(candidates))
+        if target == 0:
+            return []
+
+        listing = "\n\n".join(
+            f"[{candidate.id}] score={candidate.fitness_score} rejected={candidate.rejected}\n"
+            f"{candidate.template}"
+            for candidate in candidates
+        )
         response = await self._client.chat_completion(
-            messages=messages,
+            messages=[
+                {
+                    "role": "user",
+                    "content": DIVERSE_RESET_PROMPT.format(
+                        count=target,
+                        candidates=listing,
+                    ),
+                }
+            ],
             model=self._meta_model,
             role=ModelRole.META,
             **(self._extra_kwargs or {}),
         )
-        self._cost_tracker.record(response)
+        if getattr(self._client, "owns_cost_accounting", False) is not True:
+            self._cost_tracker.record(response)
+        matches = _CANDIDATE_IDS_RE.findall(response.content or "")
+        by_id = {candidate.id: candidate for candidate in candidates}
+        if len(matches) == 1:
+            candidate_ids = [item.strip() for item in matches[0].split(",")]
+            if (
+                len(candidate_ids) == target
+                and len(set(candidate_ids)) == target
+                and all(candidate_id in by_id for candidate_id in candidate_ids)
+            ):
+                return [by_id[candidate_id] for candidate_id in candidate_ids]
 
-        template = self._extract_template(response.content or "")
-
-        return Candidate(
-            template=template,
-            generation=generation,
-            parent_ids=[],
-        )
+        return sorted(
+            candidates,
+            key=lambda candidate: (candidate.rejected, -candidate.fitness_score),
+        )[:target]
 
     @staticmethod
     def _format_failing_cases(case_results: list[CaseResult]) -> str:
-        """Format failing cases for the critic prompt.
-
-        Includes case_id, tier, score, and reason for each failing case.
-        """
-        failing = [cr for cr in case_results if not cr.passed]
+        """Format failed case IDs, tiers, scores, and reasons."""
+        failing = [case_result for case_result in case_results if not case_result.passed]
         if not failing:
             return "(No failing cases)"
-
-        lines = []
-        for cr in failing:
-            lines.append(f"- Case {cr.case_id} [tier={cr.tier}, score={cr.score:.2f}]: {cr.reason}")
-        return "\n".join(lines)
+        return "\n".join(
+            f"- Case {case.case_id} [tier={case.tier}, score={case.score:.2f}]: {case.reason}"
+            for case in failing
+        )
 
     @staticmethod
     def _format_passing_summary(case_results: list[CaseResult]) -> str:
-        """Brief summary of passing cases (not full detail) for context."""
-        passing = [cr for cr in case_results if cr.passed]
+        """Return a brief passing-case summary for critic context."""
+        passing = [case_result for case_result in case_results if case_result.passed]
         if not passing:
             return "(No passing cases)"
-
-        return f"{len(passing)} case(s) passed: {', '.join(cr.case_id for cr in passing)}"
+        return f"{len(passing)} case(s) passed: {', '.join(case.case_id for case in passing)}"
 
     @staticmethod
     def _extract_template(response_content: str) -> str:
-        """Extract template from <revised_template> delimiters or use full content.
-
-        Looks for content between <revised_template> and </revised_template> tags.
-        If no delimiters are found, returns the entire response content stripped.
-        """
+        """Extract a delimited template, falling back to stripped content."""
         match = _TEMPLATE_RE.search(response_content)
         if match:
             return match.group(1).strip()

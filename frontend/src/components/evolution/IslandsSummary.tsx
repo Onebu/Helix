@@ -81,24 +81,24 @@ export default function IslandsSummary({ candidates, migrations, islandCount, st
         <h3 className="text-sm font-medium text-foreground">{t('evolution.islands')}</h3>
         {totalMigrations > 0 && (
           <span className="text-xs text-muted-foreground">
-            {totalMigrations} migration{totalMigrations !== 1 ? 's' : ''}
+            {t('evolution.migrationsRecorded', { count: totalMigrations })}
           </span>
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 flex-1 content-start">
+      <div className="grid flex-1 grid-cols-1 content-start gap-2 sm:grid-cols-2 xl:grid-cols-4">
         {islands.map((island) => (
           <div
             key={island.island}
-            className="rounded-md border border-border/60 bg-background/50 px-3 py-3 space-y-2"
+            className="min-w-0 space-y-2 rounded-md border border-border/60 bg-background/50 px-3 py-3"
           >
             {/* Island header */}
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-foreground">
-                Island {island.island}
+                {t('evolution.island', { index: island.island + 1 })}
               </span>
               <span className="text-xs text-muted-foreground">
-                {island.candidateCount} candidates
+                {t('evolution.candidateCount', { count: island.candidateCount })}
               </span>
             </div>
 
@@ -106,7 +106,7 @@ export default function IslandsSummary({ candidates, migrations, islandCount, st
               <>
                 {/* Best fitness — hero number */}
                 <div>
-                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Best fitness</span>
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{t('evolution.bestFitness')}</span>
                   <div className="flex items-baseline gap-2">
                     <span
                       className="text-xl font-bold tabular-nums"
@@ -124,10 +124,10 @@ export default function IslandsSummary({ candidates, migrations, islandCount, st
 
                 {/* Avg + rejected row */}
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Avg {island.avgFitness.toFixed(2)}</span>
+                  <span>{t('evolution.avgFitness')} {island.avgFitness.toFixed(2)}</span>
                   {island.rejectedCount > 0 && (
                     <span className="text-destructive/70">
-                      {island.rejectedCount} rejected
+                      {t('evolution.rejectedCount', { count: island.rejectedCount })}
                     </span>
                   )}
                 </div>
@@ -158,7 +158,7 @@ export default function IslandsSummary({ candidates, migrations, islandCount, st
               </>
             ) : (
               <div className="text-xs text-muted-foreground py-2">
-                {status === 'running' ? 'Evaluating...' : 'No data'}
+                {status === 'running' ? t('evolution.evaluatingCandidates') : t('evolution.noDataYet')}
               </div>
             )}
           </div>

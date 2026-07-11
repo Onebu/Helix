@@ -6,9 +6,8 @@ Tests all pipeline components wiring: evaluator, RCC, selector, cost tracker.
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
-
 
 from api.config.models import GenerationConfig
 from api.dataset.models import TestCase
@@ -25,7 +24,6 @@ from api.evolution.selector import BoltzmannSelector
 from api.gateway.cost import CostTracker
 from api.gateway.protocol import LLMProvider
 from api.types import LLMResponse, ModelRole
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -48,7 +46,7 @@ def _make_llm_response(
         input_tokens=10,
         output_tokens=20,
         cost_usd=0.001,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
 
 
@@ -70,8 +68,18 @@ def _build_deterministic_mock() -> AsyncMock:
             )
 
         if role == ModelRole.JUDGE:
+            criteria = [
+                line.split(". ", 1)[1]
+                for line in messages[-1]["content"].split("## Criteria to Evaluate\n", 1)[1].splitlines()
+                if line[:1].isdigit() and ". " in line
+            ]
             return _make_llm_response(
-                content=json.dumps({"score": 4, "reason": "Good greeting"}),
+                content=json.dumps({
+                    "evaluations": [
+                        {"criterion": criterion, "passed": False, "reason": "Needs refinement"}
+                        for criterion in criteria
+                    ]
+                }),
                 role=ModelRole.JUDGE,
             )
 

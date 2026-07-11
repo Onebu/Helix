@@ -6,7 +6,7 @@ TemplateValidator and CostTracker (both are pure logic, no I/O).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
@@ -19,10 +19,9 @@ from api.evaluation.models import (
 from api.evaluation.validator import TemplateValidator
 from api.evolution.models import Candidate
 from api.evolution.rcc import RCCEngine
-from api.gateway.litellm_provider import LiteLLMProvider
 from api.gateway.cost import CostTracker
+from api.gateway.litellm_provider import LiteLLMProvider
 from api.types import LLMResponse, ModelRole
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -38,7 +37,7 @@ def _make_llm_response(content: str) -> LLMResponse:
         input_tokens=100,
         output_tokens=50,
         cost_usd=0.001,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
 
 
@@ -92,7 +91,7 @@ def _build_engine(
 
 
 class TestSingleTurnRCC:
-    """n_seq=1: critic called once, author called once."""
+    """rcc_rounds=1: critic called once, author called once."""
 
     @pytest.mark.asyncio
     async def test_single_turn_rcc(self):
@@ -107,21 +106,22 @@ class TestSingleTurnRCC:
         engine = _build_engine(mock_client)
         parent = _make_parent()
 
-        candidate = await engine.run_conversation(
+        drafts = await engine.run_conversation(
             parents=[parent],
             original_template="Hello {{ name }}, your role is {{ role }}.",
             anchor_variables={"name", "role"},
             purpose="Generate greetings",
-            n_seq=1,
+            rcc_rounds=1,
             generation=1,
         )
 
-        assert candidate.template == "Welcome {{ name }}, your role is {{ role }}!"
+        assert drafts[0].template == "Welcome {{ name }}, your role is {{ role }}!"
+        assert len(drafts) == 1
         assert mock_client.chat_completion.call_count == 2
 
 
 class TestMultiTurnRCC:
-    """n_seq=3: critic/author called 3 times each."""
+    """rcc_rounds=3: critic/author called 3 times each."""
 
     @pytest.mark.asyncio
     async def test_multi_turn_rcc(self):
@@ -142,18 +142,115 @@ class TestMultiTurnRCC:
         engine = _build_engine(mock_client)
         parent = _make_parent()
 
-        candidate = await engine.run_conversation(
+        drafts = await engine.run_conversation(
             parents=[parent],
             original_template="Hello {{ name }}, your role is {{ role }}.",
             anchor_variables={"name", "role"},
             purpose="Generate greetings",
-            n_seq=3,
+            rcc_rounds=3,
             generation=2,
         )
 
         # Final template is from last turn
-        assert candidate.template == "Rev3 {{ name }} {{ role }}"
+        assert [draft.template for draft in drafts] == ["Rev3 {{ name }} {{ role }}"]
         assert mock_client.chat_completion.call_count == 6
+        second_critic = mock_client.chat_completion.call_args_list[2].kwargs["messages"][1][
+            "content"
+        ]
+        assert "Rev1 {{ name }} {{ role }}" in second_critic
+
+
+@pytest.mark.asyncio
+async def test_critic_receives_every_parent_template_and_failure():
+    client = AsyncMock(spec=LiteLLMProvider)
+    client.chat_completion.side_effect = [
+        _make_llm_response("Combine both strengths"),
+        _make_llm_response("<revised_template>{{ name }} {{ role }}</revised_template>"),
+    ]
+    first = _make_parent(
+        template="FIRST {{ name }} {{ role }}",
+        case_results=[
+            CaseResult(case_id="first-failure", score=0.0, passed=False, reason="First failed")
+        ],
+    )
+    second = _make_parent(
+        template="SECOND {{ name }} {{ role }}",
+        case_results=[
+            CaseResult(case_id="second-failure", score=0.0, passed=False, reason="Second failed")
+        ],
+    )
+
+    drafts = await _build_engine(client).run_conversation(
+        parents=[first, second],
+        original_template="Seed {{ name }} {{ role }}",
+        anchor_variables={"name", "role"},
+        purpose="greeting",
+        rcc_rounds=1,
+        generation=1,
+    )
+
+    critic_text = client.chat_completion.call_args_list[0].kwargs["messages"][1]["content"]
+    assert "FIRST" in critic_text
+    assert "SECOND" in critic_text
+    assert "First failed" in critic_text
+    assert "Second failed" in critic_text
+    assert drafts[0].parent_ids == [first.id, second.id]
+
+
+@pytest.mark.asyncio
+async def test_paper_reference_evaluates_and_returns_each_round():
+    client = AsyncMock(spec=LiteLLMProvider)
+    client.chat_completion.side_effect = [
+        _make_llm_response("critique one"),
+        _make_llm_response("<revised_template>One {{ name }} {{ role }}</revised_template>"),
+        _make_llm_response("critique two"),
+        _make_llm_response("<revised_template>Two {{ name }} {{ role }}</revised_template>"),
+        _make_llm_response("critique three"),
+        _make_llm_response("<revised_template>Three {{ name }} {{ role }}</revised_template>"),
+        _make_llm_response("critique four"),
+        _make_llm_response("<revised_template>Four {{ name }} {{ role }}</revised_template>"),
+    ]
+    evaluated: list[str] = []
+
+    async def evaluate(candidate: Candidate) -> Candidate:
+        evaluated.append(candidate.template)
+        round_number = len(evaluated)
+        candidate.evaluation = _make_parent(
+            case_results=[
+                CaseResult(
+                    case_id=f"round-{round_number}",
+                    score=0.0,
+                    passed=False,
+                    reason=f"evidence from round {round_number}",
+                )
+            ]
+        ).evaluation
+        return candidate
+
+    drafts = await _build_engine(client).run_conversation(
+        parents=[_make_parent()],
+        original_template="Seed {{ name }} {{ role }}",
+        anchor_variables={"name", "role"},
+        purpose="greeting",
+        rcc_rounds=4,
+        generation=1,
+        evaluate_draft=evaluate,
+    )
+
+    assert evaluated == [
+        "One {{ name }} {{ role }}",
+        "Two {{ name }} {{ role }}",
+        "Three {{ name }} {{ role }}",
+        "Four {{ name }} {{ role }}",
+    ]
+    assert [draft.template for draft in drafts] == evaluated
+    assert len(drafts) == 4
+    assert client.chat_completion.call_count == 8
+    for round_number, critic_call_index in [(1, 2), (2, 4), (3, 6)]:
+        critic_text = client.chat_completion.call_args_list[critic_call_index].kwargs["messages"][
+            1
+        ]["content"]
+        assert f"evidence from round {round_number}" in critic_text
 
 
 class TestNoParentFreshGeneration:
@@ -166,24 +263,122 @@ class TestNoParentFreshGeneration:
             _make_llm_response(
                 "<revised_template>Fresh {{ name }} prompt for {{ role }}</revised_template>"
             ),
+            _make_llm_response("Improve the fresh draft."),
+            _make_llm_response(
+                "<revised_template>Refined {{ name }} prompt for {{ role }}</revised_template>"
+            ),
         ]
 
         engine = _build_engine(mock_client)
 
-        candidate = await engine.run_conversation(
+        drafts = await engine.run_conversation(
             parents=[],
             original_template="Hello {{ name }}, your role is {{ role }}.",
             anchor_variables={"name", "role"},
             purpose="Generate greetings",
-            n_seq=3,
+            rcc_rounds=2,
             generation=1,
         )
 
-        # Only one LLM call (fresh generation), not 6 (critic+author x 3)
-        assert mock_client.chat_completion.call_count == 1
-        assert candidate.template == "Fresh {{ name }} prompt for {{ role }}"
-        assert candidate.parent_ids == []
-        assert candidate.generation == 1
+        # The fresh call is round one; the remaining round is critic + author.
+        assert mock_client.chat_completion.call_count == 3
+        assert [draft.template for draft in drafts] == [
+            "Refined {{ name }} prompt for {{ role }}"
+        ]
+        assert drafts[0].parent_ids == []
+        assert drafts[0].generation == 1
+
+    @pytest.mark.asyncio
+    async def test_fresh_generation_retries_invalid_first_round(self):
+        mock_client = AsyncMock(spec=LiteLLMProvider)
+        mock_client.chat_completion.side_effect = [
+            _make_llm_response("<revised_template>Missing role {{ name }}</revised_template>"),
+            _make_llm_response(
+                "<revised_template>Fresh {{ name }} prompt for {{ role }}</revised_template>"
+            ),
+        ]
+
+        drafts = await _build_engine(mock_client).run_conversation(
+            parents=[],
+            original_template="Hello {{ name }}, your role is {{ role }}.",
+            anchor_variables={"name", "role"},
+            purpose="Generate greetings",
+            rcc_rounds=1,
+            generation=1,
+        )
+
+        assert mock_client.chat_completion.call_count == 2
+        assert drafts[0].template == "Fresh {{ name }} prompt for {{ role }}"
+
+    @pytest.mark.asyncio
+    async def test_fresh_generation_retries_unchanged_original(self):
+        original = "Hello {{ name }}, your role is {{ role }}."
+        mock_client = AsyncMock(spec=LiteLLMProvider)
+        mock_client.chat_completion.side_effect = [
+            _make_llm_response(f"<revised_template>{original}</revised_template>"),
+            _make_llm_response(
+                "<revised_template>Fresh {{ name }} prompt for {{ role }}</revised_template>"
+            ),
+        ]
+
+        drafts = await _build_engine(mock_client).run_conversation(
+            parents=[],
+            original_template=original,
+            anchor_variables={"name", "role"},
+            purpose="Generate greetings",
+            rcc_rounds=1,
+            generation=1,
+        )
+
+        assert mock_client.chat_completion.call_count == 2
+        assert [draft.template for draft in drafts] == [
+            "Fresh {{ name }} prompt for {{ role }}"
+        ]
+
+    @pytest.mark.asyncio
+    async def test_fresh_generation_retries_empty_output(self):
+        mock_client = AsyncMock(spec=LiteLLMProvider)
+        mock_client.chat_completion.side_effect = [
+            _make_llm_response("<revised_template></revised_template>"),
+            _make_llm_response(
+                "<revised_template>Fresh {{ name }} prompt for {{ role }}</revised_template>"
+            ),
+        ]
+
+        drafts = await _build_engine(mock_client).run_conversation(
+            parents=[],
+            original_template="Hello {{ name }}, your role is {{ role }}.",
+            anchor_variables={"name", "role"},
+            purpose="Generate greetings",
+            rcc_rounds=1,
+            generation=1,
+        )
+
+        assert mock_client.chat_completion.call_count == 2
+        assert [draft.template for draft in drafts] == [
+            "Fresh {{ name }} prompt for {{ role }}"
+        ]
+
+    @pytest.mark.asyncio
+    async def test_fresh_malformed_jinja_retries_and_never_escapes(self):
+        mock_client = AsyncMock(spec=LiteLLMProvider)
+        malformed = "<revised_template>Hello {{ name }, role {{ role }}</revised_template>"
+        mock_client.chat_completion.side_effect = [
+            _make_llm_response(malformed),
+            _make_llm_response(malformed),
+        ]
+
+        drafts = await _build_engine(mock_client, max_retries=2).run_conversation(
+            parents=[],
+            original_template="Hello {{ name }}, your role is {{ role }}.",
+            anchor_variables={"name", "role"},
+            purpose="Generate greetings",
+            rcc_rounds=1,
+            generation=1,
+        )
+
+        assert drafts == []
+        assert mock_client.chat_completion.call_count == 2
 
 
 class TestVariablePreservationRetry:
@@ -206,25 +401,50 @@ class TestVariablePreservationRetry:
         engine = _build_engine(mock_client, max_retries=3)
         parent = _make_parent()
 
-        candidate = await engine.run_conversation(
+        drafts = await engine.run_conversation(
             parents=[parent],
             original_template="Hello {{ name }}, your role is {{ role }}.",
             anchor_variables={"name", "role"},
             purpose="Generate greetings",
-            n_seq=1,
+            rcc_rounds=1,
             generation=1,
         )
 
         # 1 critic + 2 author attempts = 3 calls
         assert mock_client.chat_completion.call_count == 3
-        assert candidate.template == "Hello {{ name }}, assigned {{ role }}."
-
-
-class TestAllRetriesFailKeepsPrevious:
-    """All retries produce invalid templates; falls back to previous template."""
+        assert drafts[0].template == "Hello {{ name }}, assigned {{ role }}."
 
     @pytest.mark.asyncio
-    async def test_all_retries_fail_keeps_previous(self):
+    async def test_malformed_jinja_retries_inside_author_loop(self):
+        mock_client = AsyncMock(spec=LiteLLMProvider)
+        mock_client.chat_completion.side_effect = [
+            _make_llm_response("The prompt needs improvement."),
+            _make_llm_response(
+                "<revised_template>Hello {{ name }, role {{ role }}</revised_template>"
+            ),
+            _make_llm_response(
+                "<revised_template>Hello {{ name }}, role {{ role }}</revised_template>"
+            ),
+        ]
+
+        drafts = await _build_engine(mock_client).run_conversation(
+            parents=[_make_parent()],
+            original_template="Hello {{ name }}, your role is {{ role }}.",
+            anchor_variables={"name", "role"},
+            purpose="Generate greetings",
+            rcc_rounds=1,
+            generation=1,
+        )
+
+        assert mock_client.chat_completion.call_count == 3
+        assert drafts[0].template == "Hello {{ name }}, role {{ role }}"
+
+
+class TestAllRetriesFailRejectsConversation:
+    """All retries produce invalid templates; no fallback escapes as a draft."""
+
+    @pytest.mark.asyncio
+    async def test_all_retries_fail_returns_no_draft(self):
         mock_client = AsyncMock(spec=LiteLLMProvider)
         mock_client.chat_completion.side_effect = [
             # Critic
@@ -238,19 +458,47 @@ class TestAllRetriesFailKeepsPrevious:
         engine = _build_engine(mock_client, max_retries=3)
         parent = _make_parent(template="Hello {{ name }}, your role is {{ role }}.")
 
-        candidate = await engine.run_conversation(
+        drafts = await engine.run_conversation(
             parents=[parent],
             original_template="Hello {{ name }}, your role is {{ role }}.",
             anchor_variables={"name", "role"},
             purpose="Generate greetings",
-            n_seq=1,
+            rcc_rounds=1,
             generation=1,
         )
 
-        # Falls back to parent's template (previous valid one)
-        assert candidate.template == "Hello {{ name }}, your role is {{ role }}."
+        assert drafts == []
         # 1 critic + 3 failed author attempts = 4 calls
         assert mock_client.chat_completion.call_count == 4
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "author_output",
+        [
+            "<revised_template></revised_template>",
+            "<revised_template>Hello {{ name }}, your role is {{ role }}.</revised_template>",
+        ],
+        ids=["empty", "unchanged"],
+    )
+    async def test_empty_or_unchanged_output_is_not_returned(self, author_output: str):
+        mock_client = AsyncMock(spec=LiteLLMProvider)
+        mock_client.chat_completion.side_effect = [
+            _make_llm_response("Issues found."),
+            _make_llm_response(author_output),
+            _make_llm_response(author_output),
+        ]
+
+        drafts = await _build_engine(mock_client, max_retries=2).run_conversation(
+            parents=[_make_parent()],
+            original_template="Hello {{ name }}, your role is {{ role }}.",
+            anchor_variables={"name", "role"},
+            purpose="Generate greetings",
+            rcc_rounds=1,
+            generation=1,
+        )
+
+        assert drafts == []
+        assert mock_client.chat_completion.call_count == 3
 
 
 class TestTemplateExtraction:
@@ -271,16 +519,16 @@ class TestTemplateExtraction:
         engine = _build_engine(mock_client)
         parent = _make_parent()
 
-        candidate = await engine.run_conversation(
+        drafts = await engine.run_conversation(
             parents=[parent],
             original_template="Hello {{ name }}, your role is {{ role }}.",
             anchor_variables={"name", "role"},
             purpose="Generate greetings",
-            n_seq=1,
+            rcc_rounds=1,
             generation=1,
         )
 
-        assert candidate.template == "Hello {{ name }}, welcome as {{ role }}!"
+        assert drafts[0].template == "Hello {{ name }}, welcome as {{ role }}!"
 
     @pytest.mark.asyncio
     async def test_template_extraction_without_delimiters(self):
@@ -293,17 +541,17 @@ class TestTemplateExtraction:
         engine = _build_engine(mock_client)
         parent = _make_parent()
 
-        candidate = await engine.run_conversation(
+        drafts = await engine.run_conversation(
             parents=[parent],
             original_template="Hello {{ name }}, your role is {{ role }}.",
             anchor_variables={"name", "role"},
             purpose="Generate greetings",
-            n_seq=1,
+            rcc_rounds=1,
             generation=1,
         )
 
         # Uses full content when no delimiters
-        assert candidate.template == "Hello {{ name }}, welcome as {{ role }}!"
+        assert drafts[0].template == "Hello {{ name }}, welcome as {{ role }}!"
 
 
 class TestCandidateLineage:
@@ -321,28 +569,26 @@ class TestCandidateLineage:
         parent1 = _make_parent(fitness=0.8)
         parent2 = _make_parent(fitness=0.6)
 
-        candidate = await engine.run_conversation(
+        drafts = await engine.run_conversation(
             parents=[parent1, parent2],
             original_template="Hello {{ name }}, your role is {{ role }}.",
             anchor_variables={"name", "role"},
             purpose="Generate greetings",
-            n_seq=1,
+            rcc_rounds=1,
             generation=5,
         )
 
-        assert candidate.generation == 5
-        assert parent1.id in candidate.parent_ids
-        assert parent2.id in candidate.parent_ids
-        assert len(candidate.parent_ids) == 2
+        assert drafts[0].generation == 5
+        assert drafts[0].parent_ids == [parent1.id, parent2.id]
 
 
-class TestCostTrackerRecordsAllCalls:
-    """Cost tracker has records for all meta-model calls."""
+class TestCostTrackingOwnership:
+    """The provider wrapper owns meta-model call accounting."""
 
     @pytest.mark.asyncio
-    async def test_cost_tracker_records_all_calls(self):
+    async def test_plain_provider_preserves_direct_cost_tracking(self):
         mock_client = AsyncMock(spec=LiteLLMProvider)
-        # n_seq=2: 2 critic + 2 author = 4 calls
+        # rcc_rounds=2: 2 critic + 2 author = 4 calls
         mock_client.chat_completion.side_effect = [
             _make_llm_response("Critique 1"),
             _make_llm_response("<revised_template>T1 {{ name }} {{ role }}</revised_template>"),
@@ -359,11 +605,12 @@ class TestCostTrackerRecordsAllCalls:
             original_template="Hello {{ name }}, your role is {{ role }}.",
             anchor_variables={"name", "role"},
             purpose="Generate greetings",
-            n_seq=2,
+            rcc_rounds=2,
             generation=1,
         )
 
         summary = cost_tracker.summary()
+        assert mock_client.chat_completion.await_count == 4
         assert summary["total_calls"] == 4
         assert summary["total_cost_usd"] == pytest.approx(0.004)
 
@@ -446,7 +693,7 @@ class TestRetryMessageDistinguishesRenames:
             ),
             # Author attempt 2 (retry): correct
             _make_llm_response(
-                "<revised_template>Hello {{ name }}, your role is {{ role_name }}.</revised_template>"
+                "<revised_template>Hello {{ name }}, your assigned role is {{ role_name }}.</revised_template>"
             ),
         ]
 
@@ -460,7 +707,7 @@ class TestRetryMessageDistinguishesRenames:
             original_template="Hello {{ name }}, your role is {{ role_name }}.",
             anchor_variables={"name", "role_name"},
             purpose="Generate greetings",
-            n_seq=1,
+            rcc_rounds=1,
             generation=1,
         )
 
@@ -496,7 +743,7 @@ class TestRetryMessageDistinguishesRenames:
             original_template="Hello {{ name }}, your role is {{ role }}.",
             anchor_variables={"name", "role"},
             purpose="Generate greetings",
-            n_seq=1,
+            rcc_rounds=1,
             generation=1,
         )
 
@@ -526,7 +773,7 @@ class TestCriticPromptIncludesVariables:
             original_template="Hello {{ name }}, your role is {{ role }}.",
             anchor_variables={"name", "role"},
             purpose="Generate greetings",
-            n_seq=1,
+            rcc_rounds=1,
             generation=1,
         )
 
@@ -553,7 +800,7 @@ class TestCriticPromptIncludesVariables:
             original_template="Hello {{ name }}, your role is {{ role }}.",
             anchor_variables={"name", "role"},
             purpose="Generate greetings",
-            n_seq=1,
+            rcc_rounds=1,
             generation=1,
         )
 
@@ -562,3 +809,52 @@ class TestCriticPromptIncludesVariables:
         user_content = messages[1]["content"]
         assert "name" in user_content
         assert "role" in user_content
+
+
+class TestDiverseSelection:
+    @pytest.mark.asyncio
+    async def test_select_diverse_returns_meta_model_candidate_ids(self):
+        client = AsyncMock(spec=LiteLLMProvider)
+        candidates = [
+            Candidate(id="first", template="First {{ name }}", fitness_score=0.9),
+            Candidate(id="second", template="Second {{ name }}", fitness_score=0.8),
+            Candidate(id="third", template="Third {{ name }}", fitness_score=0.7),
+        ]
+        client.chat_completion.return_value = _make_llm_response(
+            "<candidate_ids>third, first</candidate_ids>"
+        )
+
+        selected = await _build_engine(client).select_diverse(candidates, 2)
+
+        assert selected == [candidates[2], candidates[0]]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "response_content",
+        [
+            "<candidate_ids>feasible-high, feasible-low, rejected-high</candidate_ids>",
+            "<candidate_ids>feasible-high, unknown</candidate_ids>",
+            "<candidate_ids>feasible-high, feasible-low, feasible-low</candidate_ids>",
+        ],
+        ids=["overlong", "unknown", "trailing-duplicate"],
+    )
+    async def test_select_diverse_invalid_entire_list_uses_feasible_score_order(
+        self,
+        response_content: str,
+    ):
+        client = AsyncMock(spec=LiteLLMProvider)
+        candidates = [
+            Candidate(
+                id="rejected-high",
+                template="Rejected {{ name }}",
+                fitness_score=0.95,
+                rejected=True,
+            ),
+            Candidate(id="feasible-low", template="Low {{ name }}", fitness_score=0.6),
+            Candidate(id="feasible-high", template="High {{ name }}", fitness_score=0.8),
+        ]
+        client.chat_completion.return_value = _make_llm_response(response_content)
+
+        selected = await _build_engine(client).select_diverse(candidates, 2)
+
+        assert selected == [candidates[2], candidates[1]]

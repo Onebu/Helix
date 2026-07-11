@@ -47,6 +47,7 @@ def _row_to_test_case(row: TestCaseRecord) -> TestCase:
         expected_output=row.expected_output,
         tier=PriorityTier(row.tier),
         tags=row.tags,
+        source_metadata=row.source_metadata or {},
         created_at=row.created_at,
     )
 
@@ -86,35 +87,43 @@ class DatasetService:
         Raises:
             PromptNotFoundError: If the prompt does not exist in the database.
         """
+        created, warnings = await self.add_cases(prompt_id, [case])
+        return created[0], warnings[case.id]
+
+    async def add_cases(
+        self, prompt_id: str, cases: list[TestCase]
+    ) -> tuple[list[TestCase], dict[str, list[str]]]:
+        """Atomically add test cases and return warnings keyed by case ID."""
         async with self.session_factory() as session:
-            await self._ensure_prompt_exists(session, prompt_id)
+            try:
+                schema = await self._load_variable_schema(session, prompt_id)
+                warnings: dict[str, list[str]] = {}
+                for case in cases:
+                    warnings[case.id] = await self._validate_variables(
+                        session, prompt_id, case.variables, schema
+                    )
+                    session.add(
+                        TestCaseRecord(
+                            id=case.id,
+                            prompt_id=prompt_id,
+                            name=case.name,
+                            description=case.description,
+                            chat_history=case.chat_history,
+                            variables=case.variables,
+                            tools=case.tools,
+                            expected_output=case.expected_output,
+                            tier=case.tier.value,
+                            tags=case.tags,
+                            source_metadata=case.source_metadata,
+                        )
+                    )
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
 
-            # Validate variables against schema (warn-but-allow)
-            warnings = await self._validate_variables(session, prompt_id, case.variables)
-
-            # Insert test case row
-            record = TestCaseRecord(
-                id=case.id,
-                prompt_id=prompt_id,
-                name=case.name,
-                description=case.description,
-                chat_history=case.chat_history,
-                variables=case.variables,
-                tools=case.tools,
-                expected_output=case.expected_output,
-                tier=case.tier.value,
-                tags=case.tags,
-            )
-            session.add(record)
-            await session.commit()
-
-            logger.info(
-                "Added case '%s' to prompt '%s' (tier=%s)",
-                case.id,
-                prompt_id,
-                case.tier.value,
-            )
-            return case, warnings
+        logger.info("Added %d cases to prompt '%s'", len(cases), prompt_id)
+        return cases, warnings
 
     async def list_cases(self, prompt_id: str) -> list[TestCase]:
         """List all test cases for a prompt, sorted by ID.
@@ -189,12 +198,9 @@ class DatasetService:
         # Validate structure
         schema = DatasetImportSchema.from_file_content(raw)
 
-        # Create and add each case
-        imported: list[TestCase] = []
-        for case_dict in schema.cases:
-            case = TestCase(**case_dict)
-            created, _warnings = await self.add_case(prompt_id, case)
-            imported.append(created)
+        imported, _warnings = await self.add_cases(
+            prompt_id, [TestCase(**case_dict) for case_dict in schema.cases]
+        )
 
         logger.info(
             "Imported %d cases into prompt '%s' from '%s'",
@@ -296,6 +302,7 @@ class DatasetService:
             row.expected_output = case.expected_output
             row.tier = case.tier.value
             row.tags = case.tags
+            row.source_metadata = case.source_metadata
 
             await session.commit()
 
@@ -305,35 +312,51 @@ class DatasetService:
             return case
 
     async def _validate_variables(
-        self, session: AsyncSession, prompt_id: str, variables: dict
+        self,
+        session: AsyncSession,
+        prompt_id: str,
+        variables: dict,
+        schema: list[VariableDefinition] | None = None,
     ) -> list[str]:
         """Validate test case variables against the prompt's variable schema.
 
-        Queries the Prompt row for its variables JSON and runs validation.
-        Returns empty list if no schema exists.
+        Uses a preloaded schema for batches, or loads it for direct callers.
 
         Args:
             session: Active database session.
             prompt_id: The prompt identifier.
             variables: Dict of variable name -> value from the test case.
+            schema: Optional preloaded prompt variable schema.
 
         Returns:
             List of warning message strings. Empty if no schema or no violations.
         """
         try:
-            result = await session.execute(
-                select(Prompt.variables).where(Prompt.id == prompt_id)
-            )
-            variables_json = result.scalar_one_or_none()
-            if not variables_json:
+            if schema is None:
+                schema = await self._load_variable_schema(session, prompt_id)
+            if not schema:
                 return []
-
-            schema = [VariableDefinition(**v) for v in variables_json]
             return validate_test_case_variables(variables, schema)
         except Exception:
             logger.warning(
                 "Failed to load variable schema for prompt '%s'", prompt_id
             )
+            return []
+
+    async def _load_variable_schema(
+        self, session: AsyncSession, prompt_id: str
+    ) -> list[VariableDefinition]:
+        """Load prompt existence and variable schema in one query."""
+        result = await session.execute(
+            select(Prompt.variables).where(Prompt.id == prompt_id)
+        )
+        row = result.one_or_none()
+        if row is None:
+            raise PromptNotFoundError(f"Prompt '{prompt_id}' not found")
+        try:
+            return [VariableDefinition(**value) for value in (row[0] or [])]
+        except Exception:
+            logger.warning("Failed to parse variable schema for prompt '%s'", prompt_id)
             return []
 
     async def _ensure_prompt_exists(

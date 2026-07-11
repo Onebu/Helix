@@ -4,13 +4,10 @@ Covers requirements: CFG-01, CFG-02, CFG-04, CFG-05
 """
 
 import json
-from pathlib import Path
 
-
-from api.config.models import GeneConfig
 from api.config.loader import load_prompt_config
+from api.config.models import GeneConfig
 from api.registry.schemas import PromptConfigSchema
-
 
 # -- PromptConfigSchema: provider fields (CFG-01, CFG-05) --
 
@@ -220,7 +217,7 @@ class TestGeneConfigTemperatureFields:
 
 
 class TestLoadPromptConfigExtended:
-    """load_prompt_config merges new per-role fields from config.json onto GeneConfig."""
+    """load_prompt_config merges explicit per-role overrides onto GeneConfig."""
 
     def _make_base_config(self):
         return GeneConfig(
@@ -232,95 +229,72 @@ class TestLoadPromptConfigExtended:
             judge_model="anthropic/claude-sonnet-4",
         )
 
-    def test_merges_provider_fields(self, tmp_path: Path):
-        """load_prompt_config merges provider overrides from config.json."""
+    def test_merges_provider_fields(self):
+        """load_prompt_config merges provider overrides."""
         base = self._make_base_config()
-        prompt_dir = tmp_path / "test-prompt"
-        prompt_dir.mkdir()
-        (prompt_dir / "config.json").write_text(
-            json.dumps(
-                {
-                    "meta_provider": "gemini",
-                    "target_provider": "openai",
-                }
-            )
+        merged = load_prompt_config(
+            base,
+            overrides_dict={
+                "meta_provider": "gemini",
+                "target_provider": "openai",
+            },
         )
-
-        merged = load_prompt_config(base, prompt_dir)
         assert merged.meta_provider == "gemini"
         assert merged.target_provider == "openai"
         assert merged.judge_provider == "openrouter"  # unchanged
 
-    def test_merges_temperature_fields(self, tmp_path: Path):
+    def test_merges_temperature_fields(self):
         """load_prompt_config merges per-role temperature overrides."""
         base = self._make_base_config()
-        prompt_dir = tmp_path / "test-prompt"
-        prompt_dir.mkdir()
-        (prompt_dir / "config.json").write_text(
-            json.dumps(
-                {
-                    "meta_temperature": 0.9,
-                    "target_temperature": 0.0,
-                }
-            )
+        merged = load_prompt_config(
+            base,
+            overrides_dict={
+                "meta_temperature": 0.9,
+                "target_temperature": 0.0,
+            },
         )
-
-        merged = load_prompt_config(base, prompt_dir)
         assert merged.meta_temperature == 0.9
         assert merged.target_temperature == 0.0
         assert merged.judge_temperature is None  # unchanged
 
-    def test_merges_thinking_budget_fields(self, tmp_path: Path):
+    def test_merges_thinking_budget_fields(self):
         """load_prompt_config merges thinking budget overrides."""
         base = self._make_base_config()
-        prompt_dir = tmp_path / "test-prompt"
-        prompt_dir.mkdir()
-        (prompt_dir / "config.json").write_text(
-            json.dumps(
-                {
-                    "meta_thinking_budget": -1,
-                    "judge_thinking_budget": 2048,
-                }
-            )
+        merged = load_prompt_config(
+            base,
+            overrides_dict={
+                "meta_thinking_budget": -1,
+                "judge_thinking_budget": 2048,
+            },
         )
-
-        merged = load_prompt_config(base, prompt_dir)
         assert merged.meta_thinking_budget == -1
         assert merged.judge_thinking_budget == 2048
         assert merged.target_thinking_budget is None  # unchanged
 
-    def test_missing_config_json_returns_base_unchanged(self, tmp_path: Path):
-        """If config.json doesn't exist, return base config unchanged."""
+    def test_empty_overrides_returns_base_unchanged(self):
+        """If overrides are empty, return base config unchanged."""
         base = self._make_base_config()
-        prompt_dir = tmp_path / "no-config"
-        prompt_dir.mkdir()
-
-        result = load_prompt_config(base, prompt_dir)
+        result = load_prompt_config(base, overrides_dict={})
         assert result.meta_provider == "openrouter"
         assert result.meta_temperature is None
         assert result.meta_thinking_budget is None
 
-    def test_merges_all_new_fields_together(self, tmp_path: Path):
-        """All new fields (providers, temperatures, thinking budgets) merge in one config.json."""
+    def test_merges_all_new_fields_together(self):
+        """All new fields merge from one explicit override dictionary."""
         base = self._make_base_config()
-        prompt_dir = tmp_path / "test-prompt"
-        prompt_dir.mkdir()
-        (prompt_dir / "config.json").write_text(
-            json.dumps(
-                {
-                    "meta_provider": "gemini",
-                    "meta_model": "gemini-2.5-pro",
-                    "meta_temperature": 0.9,
-                    "meta_thinking_budget": -1,
-                    "target_provider": "openai",
-                    "target_model": "gpt-4o-mini",
-                    "target_temperature": 0.0,
-                    "judge_temperature": 0.3,
-                }
-            )
+        merged = load_prompt_config(
+            base,
+            overrides_dict={
+                "meta_provider": "gemini",
+                "meta_model": "gemini-2.5-pro",
+                "meta_temperature": 0.9,
+                "meta_thinking_budget": -1,
+                "target_provider": "openai",
+                "target_model": "gpt-4o-mini",
+                "target_temperature": 0.0,
+                "judge_temperature": 0.3,
+            },
         )
-
-        merged = load_prompt_config(base, prompt_dir)
         assert merged.meta_provider == "gemini"
         assert merged.meta_model == "gemini-2.5-pro"
         assert merged.meta_temperature == 0.9

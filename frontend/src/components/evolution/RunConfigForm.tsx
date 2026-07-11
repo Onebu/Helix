@@ -22,6 +22,7 @@ interface RunConfigFormProps {
 
 const DEFAULT_CONFIG: EvolutionRunRequest = {
   prompt_id: '',
+  evolution_profile: 'cost_controlled',
   generations: 10,
   islands: 4,
   conversations_per_island: 5,
@@ -29,28 +30,34 @@ const DEFAULT_CONFIG: EvolutionRunRequest = {
   sample_size: null,
   sample_ratio: null,
   pr_no_parents: null,
-  n_seq: null,
-  population_cap: null,
+  rcc_rounds: null,
   n_emigrate: null,
   reset_interval: null,
   n_reset: null,
   n_top: null,
+  structural_mutation_probability: 0,
 }
 
 /** Reusable label + tooltip helper */
 function ParamLabel({ htmlFor, label, tooltip }: { htmlFor: string; label: string; tooltip: string }) {
   return (
-    <label htmlFor={htmlFor} className="flex items-center gap-1.5 text-sm font-medium text-foreground mb-1">
-      {label}
+    <div className="mb-1 flex items-center gap-1.5 text-sm font-medium text-foreground">
+      <label htmlFor={htmlFor}>{label}</label>
       <Tooltip>
         <TooltipTrigger asChild>
-          <HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+          <button
+            type="button"
+            aria-label={`${label} help`}
+            className="grid size-10 place-items-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <HelpCircle aria-hidden="true" className="h-4 w-4 text-muted-foreground" />
+          </button>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-xs">
           <p className="text-xs">{tooltip}</p>
         </TooltipContent>
       </Tooltip>
-    </label>
+    </div>
   )
 }
 
@@ -94,34 +101,32 @@ export default function RunConfigForm({ promptId: propPromptId, onRunStarted }: 
       setActivePreset(null)
       return
     }
+    const mutationProbability = values.structural_mutation_probability ?? 0
     setConfig((prev) => ({
       ...prev,
       ...values,
       prompt_id: prev.prompt_id,
+      structural_mutation_probability: mutationProbability,
     }))
     setActivePreset(presetName)
 
-    // Auto-enable mutation toggle if preset has non-null structural_mutation_probability
-    const smp = (values as Record<string, unknown>).structural_mutation_probability as number | null | undefined
-    if (smp !== null && smp !== undefined && smp > 0) {
-      setMutationEnabled(true)
-    } else {
-      setMutationEnabled(false)
-    }
+    // Keep the toggle and its numeric request value in sync.
+    setMutationEnabled(mutationProbability > 0)
   }
 
-  // When mutation toggle is turned off, set structural_mutation_probability to null
+  // Zero is the explicit disabled value understood by the engine.
   function handleMutationToggle(checked: boolean) {
     setMutationEnabled(checked)
     if (!checked) {
-      setConfig((prev) => ({ ...prev, structural_mutation_probability: null }))
+      setConfig((prev) => ({ ...prev, structural_mutation_probability: 0 }))
     } else {
-      // When turning on, set a default value if currently null
-      setConfig((prev) => ({
-        ...prev,
-        structural_mutation_probability:
-          (prev as Record<string, unknown>).structural_mutation_probability as number ?? 0.2,
-      }))
+      setConfig((prev) => {
+        const probability = prev.structural_mutation_probability ?? 0
+        return {
+          ...prev,
+          structural_mutation_probability: probability > 0 ? probability : 0.2,
+        }
+      })
     }
   }
 
@@ -143,12 +148,11 @@ export default function RunConfigForm({ promptId: propPromptId, onRunStarted }: 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!config.prompt_id) return
-    // Ensure structural_mutation_probability is null when mutation is disabled
     const submitConfig = {
       ...config,
       structural_mutation_probability: mutationEnabled
-        ? (config as Record<string, unknown>).structural_mutation_probability as number
-        : null,
+        ? config.structural_mutation_probability ?? 0.2
+        : 0,
     }
     mutation.mutate(submitConfig)
   }
@@ -164,7 +168,7 @@ export default function RunConfigForm({ promptId: propPromptId, onRunStarted }: 
     }
   }
 
-  const currentMutationProb = (config as Record<string, unknown>).structural_mutation_probability as number | null
+  const currentMutationProb = config.structural_mutation_probability
 
   if (successResult) {
     return (
@@ -230,6 +234,36 @@ export default function RunConfigForm({ promptId: propPromptId, onRunStarted }: 
           onSelect={handlePresetSelect}
           currentValues={config}
         />
+
+        <div className="space-y-2">
+          <label htmlFor="evolution-profile" className="block text-sm font-medium text-foreground">
+            {t('evolution.profile')}
+          </label>
+          <Select
+            value={config.evolution_profile}
+            onValueChange={(value) =>
+              setConfig((prev) => ({
+                ...prev,
+                evolution_profile: value as EvolutionRunRequest['evolution_profile'],
+              }))
+            }
+          >
+            <SelectTrigger id="evolution-profile">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="cost_controlled">{t('evolution.costControlled')}</SelectItem>
+              <SelectItem value="paper_reference">{t('evolution.paperReference')}</SelectItem>
+            </SelectContent>
+          </Select>
+          {config.evolution_profile === 'paper_reference' ? (
+            <p role="alert" className="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
+              {t('evolution.paperScaleWarning')}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">{t('evolution.costControlledDescription')}</p>
+          )}
+        </div>
 
         {/* Basic Parameters (always visible) */}
         <div className="rounded-lg border border-border bg-card overflow-hidden">
@@ -400,27 +434,27 @@ export default function RunConfigForm({ promptId: propPromptId, onRunStarted }: 
                   <Input
                     id="sel-temperature"
                     type="number"
-                    min={0}
+                    min={0.01}
                     max={2}
-                    step={0.1}
-                    value={(config as Record<string, unknown>).temperature as number ?? ''}
-                    onChange={(e) => updateNum('temperature' as keyof EvolutionRunRequest, e.target.value, true)}
+                    step={0.01}
+                    value={config.temperature ?? ''}
+                    onChange={(e) => updateNum('temperature', e.target.value, true)}
                     placeholder="1.0"
                   />
                 </div>
 
                 <div>
                   <ParamLabel
-                    htmlFor="n-seq"
-                    label={t('evolution.nSeq')}
-                    tooltip={t('evolution.nSeqTooltip')}
+                    htmlFor="rcc-rounds"
+                    label={t('evolution.rccRounds')}
+                    tooltip={t('evolution.rccRoundsTooltip')}
                   />
                   <Input
-                    id="n-seq"
+                    id="rcc-rounds"
                     type="number"
                     min={1}
-                    value={config.n_seq ?? ''}
-                    onChange={(e) => updateNum('n_seq', e.target.value, true)}
+                    value={config.rcc_rounds ?? ''}
+                    onChange={(e) => updateNum('rcc_rounds', e.target.value, true)}
                     placeholder="3"
                   />
                 </div>
@@ -466,7 +500,7 @@ export default function RunConfigForm({ promptId: propPromptId, onRunStarted }: 
                   <Input
                     id="reset-interval"
                     type="number"
-                    min={1}
+                    min={0}
                     value={config.reset_interval ?? ''}
                     onChange={(e) => updateNum('reset_interval', e.target.value, true)}
                     placeholder="3"

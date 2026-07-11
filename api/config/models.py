@@ -1,6 +1,6 @@
 """Configuration models with two-layer cascade: env vars < constructor args."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,13 +18,7 @@ class GenerationConfig(BaseModel):
 class GeneConfig(BaseSettings):
     """Main configuration for Helix.
 
-    Two-layer cascade priority:
-    1. Constructor args / CLI flags (highest)
-    2. Environment variables (GENE_ prefix)
-
-    Required for commands that use external services (evolve, history, status, bootstrap):
-    openrouter_api_key and database_url. File-only commands (register, add-case, diff)
-    work without these fields configured.
+    Configuration priority is constructor arguments, then `GENE_` environment variables.
     """
 
     model_config = SettingsConfigDict(
@@ -59,7 +53,7 @@ class GeneConfig(BaseSettings):
     judge_temperature: float | None = None
 
     # Runtime settings
-    concurrency_limit: int = 10
+    concurrency_limit: int = Field(default=10, ge=1)
     prompts_dir: str = "./prompts"
 
     # Generation defaults

@@ -10,22 +10,63 @@ Exclude with: pytest -m "not benchmark"
 
 from __future__ import annotations
 
+import asyncio
 import time
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from api.config.models import GenerationConfig
 from api.dataset.models import TestCase
+from api.evaluation.evaluator import FitnessEvaluator
+from api.evaluation.models import CaseResult, FitnessScore
 from api.evolution.islands import IslandEvolver
 from api.evolution.models import EvolutionConfig
 from api.evolution.mutator import StructuralMutator
 from api.evolution.selector import BoltzmannSelector
 from api.gateway.cost import CostTracker
-
 from tests.benchmarks.conftest import make_mock_evaluator, make_mock_rcc
 
 pytestmark = pytest.mark.benchmark
+
+
+def _make_case_evaluator(concurrency: int) -> FitnessEvaluator:
+    aggregator = MagicMock()
+    aggregator.aggregate.return_value = FitnessScore(score=0, case_results=[])
+    cost_tracker = MagicMock()
+    cost_tracker.summary.return_value = {}
+    return FitnessEvaluator(
+        client=AsyncMock(),
+        renderer=MagicMock(),
+        exact_scorer=AsyncMock(),
+        behavior_scorer=AsyncMock(),
+        aggregator=aggregator,
+        cost_tracker=cost_tracker,
+        evaluation_concurrency=concurrency,
+    )
+
+
+@pytest.mark.asyncio
+async def test_case_concurrency_provides_speedup_without_order_drift(monkeypatch):
+    cases = [TestCase(id=str(index)) for index in range(4)]
+
+    async def run(concurrency: int):
+        evaluator = _make_case_evaluator(concurrency)
+
+        async def delayed_case(**kwargs):
+            await asyncio.sleep(0.02)
+            return CaseResult(case_id=kwargs["case"].id, score=0, passed=True)
+
+        monkeypatch.setattr(evaluator, "_evaluate_case", delayed_case)
+        start = time.perf_counter()
+        report = await evaluator.evaluate("Prompt", cases, "model", GenerationConfig())
+        return time.perf_counter() - start, report
+
+    sequential_time, _ = await run(1)
+    parallel_time, report = await run(4)
+
+    assert parallel_time < sequential_time * 0.75
+    assert [result.case_id for result in report.case_results] == ["0", "1", "2", "3"]
 
 
 def _build_evolver(

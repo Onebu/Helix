@@ -3306,7 +3306,16 @@
             ],
             "title": "Structural Mutation Probability"
           },
-          "n_seq": {
+          "evolution_profile": {
+            "type": "string",
+            "enum": [
+              "cost_controlled",
+              "paper_reference"
+            ],
+            "title": "Evolution Profile",
+            "default": "cost_controlled"
+          },
+          "rcc_rounds": {
             "anyOf": [
               {
                 "type": "integer"
@@ -3315,7 +3324,40 @@
                 "type": "null"
               }
             ],
-            "title": "N Seq"
+            "title": "Rcc Rounds"
+          },
+          "retain_intermediate_children": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retain Intermediate Children"
+          },
+          "max_retries": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Retries"
+          },
+          "promotions_per_island": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promotions Per Island"
           },
           "population_cap": {
             "anyOf": [

@@ -17,6 +17,10 @@ from pydantic import BaseModel
 from api.types import OTelAttributes
 
 
+class EvaluationInvalidError(ValueError):
+    """Raised when an evaluation cannot produce trustworthy case results."""
+
+
 class CaseResult(BaseModel):
     """Result of evaluating a single dataset case against an evolved prompt.
 
@@ -56,8 +60,7 @@ class FitnessScore(BaseModel):
 
     Attributes:
         score: Overall fitness score (<= 0.0). 0.0 = perfect, negative = penalized.
-        rejected: Deprecated: use score magnitude instead. Kept for backward compat
-            with frontend/lineage serialization. Set from score threshold (< -10).
+        rejected: Whether any failed critical case makes the candidate infeasible.
         rejection_reason: Reason for rejection, if rejected.
         case_results: Individual case results that contributed to this score.
     """

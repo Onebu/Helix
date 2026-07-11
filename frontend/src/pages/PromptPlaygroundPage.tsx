@@ -6,7 +6,7 @@ import { getPromptApiPromptsPromptIdGet, addCaseApiPromptsPromptIdDatasetPost } 
 import type { PromptDetail } from '@/client/types.gen'
 import { useChatStream } from '@/hooks/useChatStream'
 import type { ChatMessage } from '@/hooks/useChatStream'
-import { getApiBaseUrl } from '@/lib/api-config'
+import { apiJson, ApiError } from '@/lib/api-fetch'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -153,10 +153,14 @@ export default function PromptPlaygroundPage() {
   const { data: promptConfig } = useQuery({
     queryKey: ['prompt-config', promptId],
     queryFn: async () => {
-      const base = getApiBaseUrl()
-      const res = await fetch(`${base}/api/prompts/${encodeURIComponent(promptId!)}/config`)
-      if (!res.ok) return null
-      return res.json() as Promise<{ target: { provider: string; model: string } }>
+      try {
+        return await apiJson<{ target: { provider: string; model: string } }>(
+          `/api/prompts/${encodeURIComponent(promptId!)}/config`,
+        )
+      } catch (error) {
+        if (error instanceof ApiError) return null
+        throw error
+      }
     },
     enabled: !!promptId,
   })
@@ -187,9 +191,9 @@ export default function PromptPlaygroundPage() {
   // Load variables from API on mount (replaces localStorage)
   useEffect(() => {
     if (detail?.template_variables && promptId) {
-      const apiUrl = import.meta.env.VITE_API_URL || ''
-      fetch(`${apiUrl}/api/prompts/${promptId}/variables`)
-        .then((res) => (res.ok ? res.json() : { variables: {} }))
+      apiJson<{ variables: Record<string, string> }>(
+        `/api/prompts/${encodeURIComponent(promptId)}/variables`,
+      )
         .then((data: { variables: Record<string, string> }) => {
           setVariables(() => {
             const next: Record<string, string> = {}
@@ -222,8 +226,7 @@ export default function PromptPlaygroundPage() {
 
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
       saveTimerRef.current = setTimeout(() => {
-        const apiUrl = import.meta.env.VITE_API_URL || ''
-        fetch(`${apiUrl}/api/prompts/${promptId}/variables`, {
+        apiJson(`/api/prompts/${encodeURIComponent(promptId)}/variables`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ variables: vars }),

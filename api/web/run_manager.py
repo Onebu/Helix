@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from api.exceptions import BudgetExhaustedError
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,12 +45,14 @@ class RunInfo:
     started_at: datetime
     result: Any = None
     error: str | None = None
+    termination_reason: str | None = None
     event_bus: Any = None
     config: Any = None
     evolution_config: Any = None
     effective_models: dict | None = None
     generation_config: Any = None
     thinking_config: dict | None = None
+    completion_handled: bool = False
 
 
 class RunManager:
@@ -60,6 +64,8 @@ class RunManager:
 
     def __init__(self) -> None:
         self._runs: dict[str, RunInfo] = {}
+        self._persistence_tasks: set[asyncio.Task] = set()
+        self._event_tasks: set[asyncio.Task] = set()
 
     async def start_run(
         self,
@@ -154,10 +160,19 @@ class RunManager:
             status = "running"
         elif info.task.cancelled():
             status = "cancelled"
-        elif info.error:
-            status = "failed"
         else:
-            status = "completed"
+            reason = info.termination_reason
+            if reason is None and info.result is not None:
+                reason = getattr(info.result, "termination_reason", None)
+            if reason is None and not info.task.cancelled():
+                exception = info.task.exception()
+                if isinstance(exception, BudgetExhaustedError):
+                    reason = "budget_exhausted"
+                elif exception is not None:
+                    reason = "error"
+                else:
+                    reason = getattr(info.task.result(), "termination_reason", None)
+            status = self._status_for_reason(reason)
 
         models = info.effective_models or {}
         result = {
@@ -187,10 +202,17 @@ class RunManager:
         for info in self._runs.values():
             if not info.task.done():
                 info.task.cancel()
-        # Wait briefly for tasks to handle cancellation
-        tasks = [info.task for info in self._runs.values() if not info.task.done()]
+        tasks = [info.task for info in self._runs.values()]
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        for run_id, info in self._runs.items():
+            self._on_complete(run_id, info.task)
+        if self._persistence_tasks:
+            await asyncio.gather(*tuple(self._persistence_tasks), return_exceptions=True)
+        if self._event_tasks:
+            await asyncio.gather(*tuple(self._event_tasks), return_exceptions=True)
+        self._persistence_tasks = {task for task in self._persistence_tasks if not task.done()}
+        self._event_tasks = {task for task in self._event_tasks if not task.done()}
 
     def _on_complete(self, run_id: str, task: asyncio.Task) -> None:
         """Callback when a task finishes -- record result or error.
@@ -202,14 +224,16 @@ class RunManager:
         On success, persists results to the database (best-effort).
         """
         info = self._runs.get(run_id)
-        if not info:
+        if not info or info.completion_handled:
             return
+        info.completion_handled = True
 
         if task.cancelled():
             info.error = "cancelled"
+            info.termination_reason = "cancelled"
             # Engine didn't get to emit evolution_complete, so we do it
             if info.event_bus is not None:
-                asyncio.ensure_future(
+                event_task = asyncio.create_task(
                     info.event_bus.publish(
                         run_id,
                         "evolution_complete",
@@ -219,32 +243,53 @@ class RunManager:
                         },
                     )
                 )
+                self._event_tasks.add(event_task)
+                event_task.add_done_callback(self._event_tasks.discard)
         elif task.exception():
-            info.error = str(task.exception())
+            exception = task.exception()
+            info.error = str(exception)
+            info.termination_reason = (
+                "budget_exhausted"
+                if isinstance(exception, BudgetExhaustedError)
+                else "error"
+            )
             # Engine didn't get to emit evolution_complete, so we do it
             if info.event_bus is not None:
-                asyncio.ensure_future(
+                event_task = asyncio.create_task(
                     info.event_bus.publish(
                         run_id,
                         "evolution_complete",
                         {
-                            "termination_reason": "error",
+                            "termination_reason": info.termination_reason,
                             "error": info.error,
                         },
                     )
                 )
+                self._event_tasks.add(event_task)
+                event_task.add_done_callback(self._event_tasks.discard)
         else:
             info.result = task.result()
+            info.termination_reason = getattr(info.result, "termination_reason", None)
             # On success, the evolution engine itself already emitted
             # evolution_complete -- no duplicate emission needed.
-            # Persist results to database (best-effort)
-            if info.config and info.evolution_config:
-                asyncio.ensure_future(self._persist_result(info))
+        if info.config is not None and info.evolution_config is not None:
+            persistence_task = asyncio.create_task(self._persist_result(info))
+            self._persistence_tasks.add(persistence_task)
+            persistence_task.add_done_callback(self._persistence_tasks.discard)
+
+    @staticmethod
+    def _status_for_reason(termination_reason: str | None) -> str:
+        return {
+            "error": "failed",
+            "budget_exhausted": "budget_exhausted",
+            "cancelled": "cancelled",
+        }.get(termination_reason, "completed")
 
     @staticmethod
     def _build_hyperparameters(evo_config, info: RunInfo) -> dict:
         """Build hyperparameters dict, merging inference and thinking overrides if present."""
-        hyper_dict = evo_config.model_dump()
+        dump = getattr(evo_config, "model_dump", None)
+        hyper_dict = dump() if callable(dump) else vars(evo_config).copy()
         if info.generation_config is not None:
             hyper_dict["inference"] = info.generation_config.model_dump()
         if info.thinking_config:
@@ -265,41 +310,46 @@ class RunManager:
             result = info.result
             config = info.config
             evo_config = info.evolution_config
+            termination_reason = info.termination_reason or getattr(
+                result, "termination_reason", None
+            )
+            best_candidate = getattr(result, "best_candidate", None)
+            generation_records = getattr(result, "generation_records", None) or []
+            total_cost = getattr(result, "total_cost", None) or {}
 
             # Build extra_metadata with all visualization data
-            extra_metadata: dict = {}
-            if result.lineage_events:
-                extra_metadata["lineage_events"] = result.lineage_events
-            if result.best_candidate and result.best_candidate.evaluation:
+            extra_metadata: dict = {"termination_reason": termination_reason}
+            lineage_events = getattr(result, "lineage_events", None)
+            if lineage_events:
+                extra_metadata["lineage_events"] = lineage_events
+            if best_candidate and best_candidate.evaluation:
                 extra_metadata["case_results"] = [
                     cr.model_dump(exclude={"otel"})
-                    for cr in result.best_candidate.evaluation.case_results
+                    for cr in best_candidate.evaluation.case_results
                 ]
-                extra_metadata["best_candidate_id"] = result.best_candidate.id
-            if result.seed_evaluation:
+                extra_metadata["best_candidate_id"] = best_candidate.id
+            seed_evaluation = getattr(result, "seed_evaluation", None)
+            if seed_evaluation:
                 extra_metadata["seed_case_results"] = [
-                    cr.model_dump(exclude={"otel"}) for cr in result.seed_evaluation.case_results
+                    cr.model_dump(exclude={"otel"}) for cr in seed_evaluation.case_results
                 ]
-            if result.generation_records:
+            if generation_records:
                 extra_metadata["generation_records"] = [
-                    gr.model_dump() for gr in result.generation_records
+                    gr.model_dump() for gr in generation_records
                 ]
-            extra_metadata["termination_reason"] = result.termination_reason
-            extra_metadata["best_normalized_score"] = result.best_candidate.normalized_score
+            if best_candidate is not None:
+                extra_metadata["best_normalized_score"] = best_candidate.normalized_score
+            if info.error:
+                extra_metadata["error"] = info.error
 
             db = Database(config.database_url)
             session = await db.get_session()
             try:
                 # Use effective_models for model/provider columns if available
                 models = info.effective_models or {}
-                status_map = {
-                    "budget_exhausted": "budget_exhausted",
-                    "error": "error",
-                }
-                status = status_map.get(result.termination_reason, "completed")
                 run = EvolutionRun(
                     prompt_id=info.prompt_id,
-                    status=status,
+                    status=self._status_for_reason(termination_reason),
                     run_uuid=info.run_id,
                     meta_model=models.get("meta_model", config.meta_model),
                     target_model=models.get("target_model", config.target_model),
@@ -308,12 +358,14 @@ class RunManager:
                     target_provider=models.get("target_provider"),
                     judge_provider=models.get("judge_provider"),
                     hyperparameters=self._build_hyperparameters(evo_config, info),
-                    total_input_tokens=result.total_cost.get("total_input_tokens", 0),
-                    total_output_tokens=result.total_cost.get("total_output_tokens", 0),
-                    total_cost_usd=result.total_cost.get("total_cost_usd", 0.0),
-                    total_api_calls=result.total_cost.get("total_calls", 0),
-                    best_fitness_score=result.best_candidate.fitness_score,
-                    generations_completed=len(result.generation_records),
+                    total_input_tokens=total_cost.get("total_input_tokens", 0),
+                    total_output_tokens=total_cost.get("total_output_tokens", 0),
+                    total_cost_usd=total_cost.get("total_cost_usd", 0.0),
+                    total_api_calls=total_cost.get("total_calls", 0),
+                    best_fitness_score=(
+                        best_candidate.fitness_score if best_candidate is not None else None
+                    ),
+                    generations_completed=len(generation_records),
                     extra_metadata=extra_metadata or None,
                 )
                 session.add(run)

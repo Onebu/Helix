@@ -4,14 +4,13 @@ Penalty-based scoring: 0 = no penalty (pass), negative = violation.
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from api.evaluation.models import CaseResult
+from api.evaluation.models import CaseResult, EvaluationInvalidError
 from api.types import LLMResponse, ModelRole
-
 
 # ---------------------------------------------------------------------------
 # Helpers -- mock LLMResponse objects
@@ -31,7 +30,7 @@ def _make_response(
         input_tokens=10,
         output_tokens=10,
         cost_usd=0.001,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
 
 
@@ -504,7 +503,7 @@ def _make_behavior_judge_response(evaluations: list[dict]) -> LLMResponse:
         input_tokens=100,
         output_tokens=50,
         cost_usd=0.002,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
 
 
@@ -549,6 +548,7 @@ class TestBehaviorJudgeScorer:
         assert result.criteria_results is not None
         assert len(result.criteria_results) == 3
         assert all(cr["passed"] for cr in result.criteria_results)
+        mock_client.chat_completion.assert_awaited_once()
 
     # -- Partial criteria pass --
 
@@ -587,6 +587,18 @@ class TestBehaviorJudgeScorer:
         assert result.passed is True
         mock_client.chat_completion.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_none_behavior_is_no_criteria(self, scorer, mock_client):
+        """A null behavior value does not call the judge provider."""
+        result = await scorer.score(
+            expected={"behavior": None},
+            actual_response=_make_response(content="Some response"),
+        )
+
+        assert result.score == 0
+        assert result.passed is True
+        mock_client.chat_completion.assert_not_called()
+
     # -- Client call arguments --
 
     @pytest.mark.asyncio
@@ -612,11 +624,11 @@ class TestBehaviorJudgeScorer:
         schema = response_format["json_schema"]["schema"]
         assert "evaluations" in schema["properties"]
 
-    # -- Error handling: invalid JSON (score=-2) --
+    # -- Error handling: invalid JSON --
 
     @pytest.mark.asyncio
     async def test_invalid_json_response(self, scorer, mock_client):
-        """Returns score=-2, passed=False when judge returns invalid JSON."""
+        """Two invalid judge responses make the evaluation invalid."""
         bad_response = LLMResponse(
             content="This is not JSON at all",
             tool_calls=None,
@@ -625,22 +637,22 @@ class TestBehaviorJudgeScorer:
             input_tokens=100,
             output_tokens=50,
             cost_usd=0.002,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
-        mock_client.chat_completion.return_value = bad_response
+        mock_client.chat_completion.side_effect = [bad_response, bad_response]
         expected = {"behavior": ["be polite"]}
         actual = _make_response(content="Hello")
 
-        result = await scorer.score(expected, actual)
-        assert result.score == -2
-        assert result.passed is False
-        assert "parsing failed" in result.reason.lower()
+        with pytest.raises(EvaluationInvalidError, match="judge response"):
+            await scorer.score(expected, actual)
 
-    # -- Error handling: null content (score=-2) --
+        assert mock_client.chat_completion.call_count == 2
+
+    # -- Error handling: null content --
 
     @pytest.mark.asyncio
     async def test_null_content_response(self, scorer, mock_client):
-        """Returns score=-2, passed=False when judge returns null content."""
+        """Two null judge responses make the evaluation invalid."""
         null_response = LLMResponse(
             content=None,
             tool_calls=None,
@@ -649,15 +661,136 @@ class TestBehaviorJudgeScorer:
             input_tokens=100,
             output_tokens=50,
             cost_usd=0.002,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
-        mock_client.chat_completion.return_value = null_response
+        mock_client.chat_completion.side_effect = [null_response, null_response]
         expected = {"behavior": ["be polite"]}
         actual = _make_response(content="Hello")
 
-        result = await scorer.score(expected, actual)
-        assert result.score == -2
-        assert result.passed is False
+        with pytest.raises(EvaluationInvalidError, match="Judge returned null content"):
+            await scorer.score(expected, actual)
+
+        assert mock_client.chat_completion.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_parse_failure_retries_once_then_uses_valid_response(
+        self, scorer, mock_client
+    ):
+        """A single parse failure gets exactly one bounded retry."""
+        mock_client.chat_completion.side_effect = [
+            _make_response(content="bad"),
+            _make_behavior_judge_response(
+                [{"criterion": "be concise", "passed": True, "reason": "Brief"}]
+            ),
+        ]
+
+        result = await scorer.score(
+            expected={"behavior": ["be concise"]},
+            actual_response=_make_response(content="Short answer"),
+        )
+
+        assert result.score == 0
+        assert result.passed is True
+        assert mock_client.chat_completion.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_behavior_string_is_one_criterion_and_parse_failure_raises(
+        self, mock_client
+    ):
+        from api.evaluation.scorers import BehaviorJudgeScorer
+
+        mock_client.chat_completion.side_effect = [
+            _make_response(content="bad"),
+            _make_response(content="still bad"),
+        ]
+        scorer = BehaviorJudgeScorer(client=mock_client, judge_model="judge")
+
+        with pytest.raises(EvaluationInvalidError, match="judge response"):
+            await scorer.score(
+                expected={"behavior": "Be concise"},
+                actual_response=_make_response(content="answer"),
+            )
+
+        prompts = [
+            call.kwargs["messages"][1]["content"]
+            for call in mock_client.chat_completion.call_args_list
+        ]
+        assert len(prompts) == 2
+        assert all("1. Be concise" in prompt for prompt in prompts)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            pytest.param([], id="list-top-level"),
+            pytest.param(1, id="scalar-top-level"),
+            pytest.param({}, id="missing-evaluations"),
+            pytest.param({"evaluations": None}, id="null-evaluations"),
+            pytest.param({"evaluations": {}}, id="object-evaluations"),
+            pytest.param({"evaluations": ["bad"]}, id="non-object-item"),
+            pytest.param(
+                {"evaluations": [{"passed": True, "reason": "ok"}]},
+                id="missing-criterion",
+            ),
+            pytest.param(
+                {"evaluations": [{"criterion": "be concise", "reason": "ok"}]},
+                id="missing-passed",
+            ),
+            pytest.param(
+                {"evaluations": [{"criterion": "be concise", "passed": True}]},
+                id="missing-reason",
+            ),
+            pytest.param(
+                {
+                    "evaluations": [
+                        {"criterion": 1, "passed": True, "reason": "ok"}
+                    ]
+                },
+                id="criterion-not-string",
+            ),
+            pytest.param(
+                {
+                    "evaluations": [
+                        {"criterion": "be concise", "passed": "false", "reason": "bad"}
+                    ]
+                },
+                id="passed-not-bool",
+            ),
+            pytest.param(
+                {
+                    "evaluations": [
+                        {"criterion": "be concise", "passed": True, "reason": 1}
+                    ]
+                },
+                id="reason-not-string",
+            ),
+        ],
+    )
+    async def test_malformed_judge_structure_retries_once_then_raises(
+        self, scorer, mock_client, payload
+    ):
+        response = _make_response(content=json.dumps(payload))
+        mock_client.chat_completion.side_effect = [response, response]
+
+        with pytest.raises(EvaluationInvalidError, match="Invalid judge response"):
+            await scorer.score(
+                expected={"behavior": ["be concise"]},
+                actual_response=_make_response(content="answer"),
+            )
+
+        assert mock_client.chat_completion.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_provider_exception_is_not_retried(self, scorer, mock_client):
+        mock_client.chat_completion.side_effect = RuntimeError("provider unavailable")
+
+        with pytest.raises(RuntimeError, match="provider unavailable"):
+            await scorer.score(
+                expected={"behavior": ["be concise"]},
+                actual_response=_make_response(content="answer"),
+            )
+
+        mock_client.chat_completion.assert_awaited_once()
 
     # -- Conversation context and purpose --
 

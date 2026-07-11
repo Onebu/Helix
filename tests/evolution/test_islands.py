@@ -15,6 +15,7 @@ Tests cover:
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock
 
@@ -32,13 +33,13 @@ from api.evolution.islands import IslandEvolver
 from api.evolution.models import (
     Candidate,
     EvolutionConfig,
+    GenerationRecord,
 )
 from api.evolution.mutator import StructuralMutator
 from api.evolution.rcc import RCCEngine
 from api.evolution.selector import BoltzmannSelector
 from api.gateway.cost import CostTracker
 from api.types import LLMResponse, ModelRole
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -66,11 +67,18 @@ def _make_report(score: float, rejected: bool = False) -> EvaluationReport:
 
 
 def _make_candidate(
-    template: str = "evolved {{ x }}", generation: int = 0, fitness: float = -2.0
+    template: str = "evolved {{ x }}",
+    generation: int = 0,
+    fitness: float = -2.0,
+    rejected: bool = False,
+    evaluated: bool = True,
 ) -> Candidate:
     """Create a Candidate with a test template and fitness."""
     c = Candidate(template=template, generation=generation, parent_ids=[])
     c.fitness_score = fitness
+    c.rejected = rejected
+    if evaluated:
+        c.evaluation = _make_report(fitness, rejected=rejected)
     return c
 
 
@@ -87,6 +95,16 @@ def _make_llm_response(cost_usd: float = 0.001) -> LLMResponse:
     )
 
 
+def _make_record(generation: int = 0, fitness: float = -2.0) -> GenerationRecord:
+    return GenerationRecord(
+        generation=generation,
+        best_fitness=fitness,
+        avg_fitness=fitness,
+        cost_summary={"total_cost_usd": 0.0},
+        candidates_evaluated=1,
+    )
+
+
 def _build_island_evolver(
     config: EvolutionConfig | None = None,
     evaluator: FitnessEvaluator | None = None,
@@ -99,7 +117,7 @@ def _build_island_evolver(
         config = EvolutionConfig(
             generations=1,
             conversations_per_island=2,
-            n_seq=1,
+            rcc_rounds=1,
             n_parents=3,
             n_islands=2,
             n_emigrate=1,
@@ -115,7 +133,7 @@ def _build_island_evolver(
         evaluator.evaluate = AsyncMock(return_value=_make_report(-2.0))
     if rcc is None:
         rcc = AsyncMock(spec=RCCEngine)
-        rcc.run_conversation = AsyncMock(return_value=_make_candidate())
+        rcc.run_conversation = AsyncMock(return_value=[_make_candidate(evaluated=False)])
     if mutator is None:
         mutator = AsyncMock(spec=StructuralMutator)
         mutator.mutate = AsyncMock(return_value=_make_candidate())
@@ -131,7 +149,7 @@ def _build_island_evolver(
         cost_tracker=cost_tracker,
         original_template="Hello {{ x }}",
         anchor_variables={"x"},
-        cases=[TestCase(chat_history=[{"role": "user", "content": "hi"}])],
+        cases=[TestCase(id="c1", chat_history=[{"role": "user", "content": "hi"}])],
         target_model="test/model",
         generation_config=GenerationConfig(),
         purpose="test",
@@ -152,6 +170,166 @@ async def test_multi_island_run_completes():
     assert result.termination_reason == "generations_complete"
     assert len(result.generation_records) == 1
     assert result.best_candidate is not None
+
+
+@pytest.mark.asyncio
+async def test_reset_runs_after_completed_generations_three_six_nine():
+    evolver = _build_island_evolver(
+        config=EvolutionConfig(
+            generations=10,
+            conversations_per_island=1,
+            rcc_rounds=1,
+            n_islands=2,
+            n_emigrate=0,
+            reset_interval=3,
+            n_seed_variants=0,
+            structural_mutation_probability=0.0,
+            pr_no_parents=0.0,
+        )
+    )
+
+    async def completed_generation(*, population, generation, island):
+        return population, _make_record(generation), None
+
+    for loop in evolver._loops:
+        loop.step_generation = AsyncMock(side_effect=completed_generation)
+    evolver._reset_islands = AsyncMock()
+
+    await evolver.run()
+
+    assert evolver._reset_islands.await_count == 3
+
+
+def test_aggregate_records_uses_one_global_cost_delta():
+    records = [
+        GenerationRecord(
+            generation=0,
+            best_fitness=-1,
+            avg_fitness=-2,
+            cost_summary={"total_calls": 1, "total_input_tokens": 10, "total_output_tokens": 5, "total_cost_usd": 1},
+            candidates_evaluated=1,
+        ),
+        GenerationRecord(
+            generation=0,
+            best_fitness=-2,
+            avg_fitness=-3,
+            cost_summary={"total_calls": 1, "total_input_tokens": 10, "total_output_tokens": 5, "total_cost_usd": 1},
+            candidates_evaluated=1,
+        ),
+    ]
+
+    delta = {
+        "total_calls": 1,
+        "total_input_tokens": 10,
+        "total_output_tokens": 5,
+        "total_cost_usd": 1,
+    }
+    merged = IslandEvolver._aggregate_records(records, delta)
+
+    assert merged.cost_summary == delta
+
+
+@pytest.mark.asyncio
+async def test_improved_seed_variant_survives_budget_stop_before_generation_zero():
+    tracker = CostTracker()
+    evaluator = AsyncMock(spec=FitnessEvaluator)
+    evaluations = 0
+
+    async def evaluate(**kwargs):
+        nonlocal evaluations
+        evaluations += 1
+        if evaluations == 2:
+            tracker.record(_make_llm_response(cost_usd=1.0))
+            return _make_report(-1.0)
+        return _make_report(-5.0)
+
+    evaluator.evaluate = AsyncMock(side_effect=evaluate)
+    rcc = AsyncMock(spec=RCCEngine)
+    rcc.run_conversation = AsyncMock(
+        return_value=[_make_candidate(template="improved {{ x }}", evaluated=False)]
+    )
+    evolver = _build_island_evolver(
+        config=EvolutionConfig(
+            generations=1,
+            conversations_per_island=1,
+            rcc_rounds=1,
+            n_islands=2,
+            n_emigrate=0,
+            reset_interval=0,
+            n_seed_variants=1,
+            budget_cap_usd=1.0,
+            structural_mutation_probability=0.0,
+            pr_no_parents=0.0,
+        ),
+        evaluator=evaluator,
+        rcc=rcc,
+        cost_tracker=tracker,
+    )
+
+    result = await evolver.run()
+
+    assert result.termination_reason == "budget_exhausted"
+    assert result.best_candidate.template == "improved {{ x }}"
+
+
+@pytest.mark.asyncio
+async def test_successful_island_result_is_processed_when_sibling_raises():
+    evolver = _build_island_evolver(
+        config=EvolutionConfig(
+            generations=1,
+            conversations_per_island=1,
+            rcc_rounds=1,
+            n_islands=2,
+            n_emigrate=0,
+            reset_interval=0,
+            n_seed_variants=0,
+            structural_mutation_probability=0.0,
+            pr_no_parents=0.0,
+        )
+    )
+    feasible = _make_candidate(template="feasible {{ x }}", fitness=-1.0)
+    rejected = _make_candidate(
+        template="rejected {{ x }}", fitness=0.0, rejected=True
+    )
+    partial = _make_candidate(
+        template="partial {{ x }}", fitness=100.0, evaluated=False
+    )
+    evolver._loops[0].step_generation = AsyncMock(side_effect=RuntimeError("boom"))
+    evolver._loops[1].step_generation = AsyncMock(
+        return_value=([rejected, partial, feasible], _make_record(fitness=-1.0), None)
+    )
+
+    result = await evolver.run()
+
+    assert result.termination_reason == "error"
+    assert result.best_candidate.template == "feasible {{ x }}"
+
+
+@pytest.mark.asyncio
+async def test_cancelled_island_retains_sibling_improvement():
+    evolver = _build_island_evolver(
+        config=EvolutionConfig(
+            generations=1,
+            conversations_per_island=1,
+            rcc_rounds=1,
+            n_islands=2,
+            n_emigrate=0,
+            reset_interval=0,
+            n_seed_variants=0,
+            structural_mutation_probability=0.0,
+            pr_no_parents=0.0,
+        )
+    )
+    improved = _make_candidate(template="improved {{ x }}", fitness=-1.0)
+    evolver._loops[0].step_generation = AsyncMock(side_effect=asyncio.CancelledError())
+    evolver._loops[1].step_generation = AsyncMock(
+        return_value=([improved], _make_record(fitness=-1.0), None)
+    )
+
+    result = await evolver.run()
+
+    assert result.termination_reason == "error"
+    assert result.best_candidate.template == "improved {{ x }}"
 
 
 # ---------------------------------------------------------------------------
@@ -180,14 +358,16 @@ async def test_cyclic_migration_moves_candidates():
     async def unique_rcc(*args, **kwargs):
         nonlocal rcc_count
         rcc_count += 1
-        return _make_candidate(template=f"evolved_{rcc_count} {{{{ x }}}}")
+        return [
+            _make_candidate(template=f"evolved_{rcc_count} {{{{ x }}}}", evaluated=False)
+        ]
 
     rcc.run_conversation = AsyncMock(side_effect=unique_rcc)
 
     config = EvolutionConfig(
         generations=2,
         conversations_per_island=2,
-        n_seq=1,
+        rcc_rounds=1,
         n_parents=3,
         n_islands=2,
         n_emigrate=1,
@@ -224,13 +404,49 @@ async def test_migration_uses_deep_copies():
     assert c1.fitness_score == -2.0
 
 
+def test_migration_requires_full_reports_and_ranks_feasible_first():
+    evolver = _build_island_evolver()
+    feasible = _make_candidate(template="feasible {{ x }}", fitness=-5.0)
+    rejected = _make_candidate(
+        template="rejected {{ x }}", fitness=0.0, rejected=True
+    )
+    partial = _make_candidate(
+        template="partial {{ x }}", fitness=100.0, evaluated=False
+    )
+    target = _make_candidate(template="target {{ x }}", fitness=-10.0)
+    evolver._island_populations = [[partial, rejected, feasible], [target]]
+
+    evolver._migrate()
+
+    assert evolver._island_populations[1][-1].template == "feasible {{ x }}"
+
+
+def test_migration_clone_model_and_lineage_share_source_parent():
+    from api.lineage.collector import LineageCollector
+
+    evolver = _build_island_evolver()
+    evolver._collector = LineageCollector()
+    source = _make_candidate(template="source {{ x }}", fitness=-1.0)
+    target = _make_candidate(template="target {{ x }}", fitness=-5.0)
+    evolver._island_populations = [[source], [target]]
+
+    evolver._migrate()
+
+    migrated = evolver._island_populations[1][-1]
+    event = next(item for item in evolver._collector.events if item.candidate_id == migrated.id)
+    assert migrated.parent_ids == [source.id]
+    assert event.parent_ids == migrated.parent_ids
+    migrated.template = "changed"
+    assert source.template == "source {{ x }}"
+
+
 @pytest.mark.asyncio
 async def test_migration_noop_when_n_emigrate_zero():
     """Migration is a no-op when n_emigrate=0."""
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         n_islands=2,
         n_emigrate=0,
         reset_interval=0,
@@ -255,7 +471,7 @@ async def test_migration_noop_when_single_island():
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         n_islands=1,
         n_emigrate=5,
         reset_interval=0,
@@ -283,7 +499,7 @@ async def test_island_reset_replaces_lowest():
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         n_islands=3,
         n_emigrate=0,
         reset_interval=3,
@@ -316,7 +532,7 @@ async def test_reset_replaces_lowest_with_all_candidates():
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         n_islands=2,
         n_emigrate=0,
         reset_interval=3,
@@ -347,7 +563,7 @@ async def test_reset_never_resets_all_islands():
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         n_islands=2,
         n_emigrate=0,
         reset_interval=3,
@@ -370,6 +586,96 @@ async def test_reset_never_resets_all_islands():
 
 
 @pytest.mark.asyncio
+async def test_paper_reference_reset_uses_diverse_selector():
+    evolver = _build_island_evolver(
+        config=EvolutionConfig(
+            evolution_profile="paper_reference",
+            conversations_per_island=1,
+            n_islands=2,
+            n_top=2,
+            n_reset=1,
+            n_seed_variants=0,
+        )
+    )
+    first = _make_candidate(template="first {{ x }}", fitness=-1)
+    second = _make_candidate(template="second {{ x }}", fitness=-2)
+    evolver._island_populations = [
+        [first, second],
+        [_make_candidate(template="weak {{ x }}", fitness=-10)],
+    ]
+    evolver._rcc.select_diverse = AsyncMock(return_value=[first, second])
+
+    await evolver._reset_islands()
+
+    evolver._rcc.select_diverse.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_reset_ranks_empty_island_worse_than_negative_valid_island():
+    evolver = _build_island_evolver(
+        config=EvolutionConfig(n_islands=2, n_reset=1, n_top=1, n_seed_variants=0)
+    )
+    valid = _make_candidate(template="valid {{ x }}", fitness=-10.0)
+    evolver._island_populations = [[], [valid]]
+
+    await evolver._reset_islands()
+
+    assert evolver._island_populations[0][0].template == "valid {{ x }}"
+    assert evolver._island_populations[1][0] is valid
+
+
+@pytest.mark.asyncio
+async def test_paper_reset_rejects_diverse_selection_with_avoidable_rejected_candidate():
+    evolver = _build_island_evolver(
+        config=EvolutionConfig(
+            evolution_profile="paper_reference",
+            conversations_per_island=1,
+            n_islands=3,
+            n_reset=1,
+            n_top=2,
+            n_seed_variants=0,
+        )
+    )
+    first = _make_candidate(template="first {{ x }}", fitness=-1.0)
+    second = _make_candidate(template="second {{ x }}", fitness=-2.0)
+    rejected = _make_candidate(
+        template="rejected {{ x }}", fitness=0.0, rejected=True
+    )
+    weak = _make_candidate(template="weak {{ x }}", fitness=-10.0)
+    evolver._island_populations = [[first, rejected], [second], [weak]]
+    evolver._rcc.select_diverse = AsyncMock(return_value=[first, rejected])
+
+    await evolver._reset_islands()
+
+    assert [candidate.template for candidate in evolver._island_populations[2]] == [
+        "first {{ x }}",
+        "second {{ x }}",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_reset_clone_model_and_lineage_share_source_parent():
+    from api.lineage.collector import LineageCollector
+
+    evolver = _build_island_evolver(
+        config=EvolutionConfig(n_islands=2, n_reset=1, n_top=1, n_seed_variants=0)
+    )
+    evolver._collector = LineageCollector()
+    low = _make_candidate(template="low {{ x }}", fitness=-10.0)
+    source = _make_candidate(template="source {{ x }}", fitness=-1.0)
+    evolver._island_populations = [[low], [source]]
+
+    await evolver._reset_islands()
+
+    reset = evolver._island_populations[0][0]
+    event = next(item for item in evolver._collector.events if item.candidate_id == reset.id)
+    assert reset.parent_ids == [source.id]
+    assert event.parent_ids == reset.parent_ids
+    reset.template = "changed"
+    assert source.template == "source {{ x }}"
+
+
+@pytest.mark.asyncio
 async def test_reset_fires_at_correct_intervals():
     """Reset only fires when generation > 0 and generation % reset_interval == 0."""
     evaluator = AsyncMock(spec=FitnessEvaluator)
@@ -381,14 +687,16 @@ async def test_reset_fires_at_correct_intervals():
     async def unique_rcc(*args, **kwargs):
         nonlocal rcc_count
         rcc_count += 1
-        return _make_candidate(template=f"evolved_{rcc_count} {{{{ x }}}}")
+        return [
+            _make_candidate(template=f"evolved_{rcc_count} {{{{ x }}}}", evaluated=False)
+        ]
 
     rcc.run_conversation = AsyncMock(side_effect=unique_rcc)
 
     config = EvolutionConfig(
         generations=4,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         n_islands=2,
         n_emigrate=0,
         reset_interval=3,
@@ -403,6 +711,40 @@ async def test_reset_fires_at_correct_intervals():
 
     assert len(result.generation_records) == 4
     assert result.termination_reason == "generations_complete"
+
+
+@pytest.mark.asyncio
+async def test_reset_event_uses_completed_generation_number():
+    events: list[tuple[str, dict]] = []
+
+    async def capture(event_type: str, data: dict) -> None:
+        events.append((event_type, data))
+
+    evolver = _build_island_evolver(
+        config=EvolutionConfig(
+            generations=4,
+            conversations_per_island=1,
+            rcc_rounds=1,
+            n_islands=2,
+            n_emigrate=0,
+            reset_interval=3,
+            n_reset=1,
+            n_top=1,
+            n_seed_variants=0,
+        )
+    )
+    evolver._event_callback = capture
+
+    async def completed(*, population, generation, island):
+        return population, _make_record(generation), None
+
+    for loop in evolver._loops:
+        loop.step_generation = AsyncMock(side_effect=completed)
+
+    await evolver.run()
+
+    reset_events = [data for event, data in events if event == "island_reset"]
+    assert reset_events[0]["generation"] == 3
 
 
 # ---------------------------------------------------------------------------
@@ -433,14 +775,16 @@ async def test_global_best_tracked_across_islands():
     async def unique_rcc(*args, **kwargs):
         nonlocal rcc_count
         rcc_count += 1
-        return _make_candidate(template=f"evolved_{rcc_count} {{{{ x }}}}")
+        return [
+            _make_candidate(template=f"evolved_{rcc_count} {{{{ x }}}}", evaluated=False)
+        ]
 
     rcc.run_conversation = AsyncMock(side_effect=unique_rcc)
 
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         n_islands=2,
         n_emigrate=0,
         reset_interval=0,
@@ -468,7 +812,7 @@ async def test_budget_exhaustion_terminates():
     config = EvolutionConfig(
         generations=5,
         conversations_per_island=3,
-        n_seq=1,
+        rcc_rounds=1,
         n_islands=2,
         n_emigrate=1,
         budget_cap_usd=1.0,
@@ -509,14 +853,16 @@ async def test_perfect_fitness_terminates():
     async def unique_rcc(*args, **kwargs):
         nonlocal rcc_count
         rcc_count += 1
-        return _make_candidate(template=f"perfect_{rcc_count} {{{{ x }}}}")
+        return [
+            _make_candidate(template=f"perfect_{rcc_count} {{{{ x }}}}", evaluated=False)
+        ]
 
     rcc.run_conversation = AsyncMock(side_effect=unique_rcc)
 
     config = EvolutionConfig(
         generations=10,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         n_islands=2,
         n_emigrate=0,
         reset_interval=0,
@@ -537,18 +883,110 @@ async def test_perfect_fitness_terminates():
 
 
 @pytest.mark.asyncio
+async def test_paper_reference_initial_population_has_conversations_times_rounds():
+    config = EvolutionConfig(
+        evolution_profile="paper_reference",
+        conversations_per_island=2,
+        rcc_rounds=4,
+        generations=1,
+        n_islands=2,
+        n_seed_variants=0,
+    )
+    evolver = _build_island_evolver(config=config)
+    call_index = 0
+
+    async def four_drafts(**kwargs):
+        nonlocal call_index
+        call_index += 1
+        evaluate_draft = kwargs["evaluate_draft"]
+        drafts = []
+        for round_index in range(4):
+            drafts.append(await evaluate_draft(_make_candidate(
+                template=f"conversation-{call_index}-round-{round_index} {{{{ x }}}}"
+            )))
+        return drafts
+
+    evolver._rcc.run_conversation = AsyncMock(side_effect=four_drafts)
+    seed = _make_candidate(template="seed {{ x }}", fitness=-5)
+
+    await evolver._initialize_populations(seed)
+
+    seed_clone = evolver._island_populations[0][0]
+    generated = [
+        candidate
+        for candidate in evolver._island_populations[0]
+        if candidate.template != seed.template
+    ]
+    assert seed_clone.parent_ids == [seed.id]
+    assert len(generated) == 8
+    assert all(candidate.parent_ids == [seed.id] for candidate in generated)
+    assert len(evolver._rcc.run_conversation.await_args_list) == 2
+    assert evolver._island_populations[0][1] is not evolver._island_populations[1][1]
+
+    evolver._island_populations[0][1].template = "changed"
+    assert evolver._island_populations[1][1].template != "changed"
+
+
+@pytest.mark.asyncio
+async def test_cost_controlled_seed_variants_deduplicate_before_evaluation_and_placement():
+    evaluator = AsyncMock(spec=FitnessEvaluator)
+    evaluator.evaluate = AsyncMock(return_value=_make_report(-1.0))
+    rcc = AsyncMock(spec=RCCEngine)
+    rcc.run_conversation = AsyncMock(
+        side_effect=[
+            [_make_candidate(template="Hello {{ x }}", evaluated=False)],
+            [_make_candidate(template="variant-a {{ x }}", evaluated=False)],
+            [_make_candidate(template="variant-a {{ x }}\n", evaluated=False)],
+            [_make_candidate(template="variant-b {{ x }}", evaluated=False)],
+        ]
+    )
+    evolver = _build_island_evolver(
+        config=EvolutionConfig(
+            generations=1,
+            conversations_per_island=1,
+            rcc_rounds=1,
+            n_islands=2,
+            n_seed_variants=4,
+        ),
+        evaluator=evaluator,
+        rcc=rcc,
+    )
+    seed = _make_candidate(template="Hello {{ x }}", fitness=-5.0)
+
+    await evolver._initialize_populations(seed)
+
+    assert evaluator.evaluate.await_count == 2
+    assert [candidate.template for candidate in evolver._island_populations[0]] == [
+        "Hello {{ x }}",
+        "variant-a {{ x }}",
+    ]
+    assert [candidate.template for candidate in evolver._island_populations[1]] == [
+        "Hello {{ x }}",
+        "variant-b {{ x }}",
+    ]
+    assert all(
+        candidate.parent_ids == [seed.id]
+        for population in evolver._island_populations
+        for candidate in population
+    )
+
+
+@pytest.mark.asyncio
 async def test_seed_evaluated_once_cloned_to_all_islands():
     """Seed candidate is evaluated once and cloned to all islands."""
     evaluator = AsyncMock(spec=FitnessEvaluator)
     evaluator.evaluate = AsyncMock(return_value=_make_report(-2.0))
 
     rcc = AsyncMock(spec=RCCEngine)
-    rcc.run_conversation = AsyncMock(return_value=_make_candidate())
+    async def fresh_draft(**_kwargs):
+        return [_make_candidate(evaluated=False)]
+
+    rcc.run_conversation = AsyncMock(side_effect=fresh_draft)
 
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         n_islands=3,
         n_emigrate=0,
         reset_interval=0,
@@ -587,14 +1025,16 @@ async def test_single_island_equivalent():
     async def unique_rcc(*args, **kwargs):
         nonlocal rcc_count
         rcc_count += 1
-        return _make_candidate(template=f"evolved_{rcc_count} {{{{ x }}}}")
+        return [
+            _make_candidate(template=f"evolved_{rcc_count} {{{{ x }}}}", evaluated=False)
+        ]
 
     rcc.run_conversation = AsyncMock(side_effect=unique_rcc)
 
     config = EvolutionConfig(
         generations=2,
         conversations_per_island=2,
-        n_seq=1,
+        rcc_rounds=1,
         n_islands=1,
         n_emigrate=5,
         reset_interval=3,
@@ -640,14 +1080,16 @@ async def test_aggregate_generation_records():
     async def unique_rcc(*args, **kwargs):
         nonlocal rcc_count
         rcc_count += 1
-        return _make_candidate(template=f"evolved_{rcc_count} {{{{ x }}}}")
+        return [
+            _make_candidate(template=f"evolved_{rcc_count} {{{{ x }}}}", evaluated=False)
+        ]
 
     rcc.run_conversation = AsyncMock(side_effect=unique_rcc)
 
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         n_islands=2,
         n_emigrate=0,
         reset_interval=0,
@@ -664,6 +1106,69 @@ async def test_aggregate_generation_records():
     assert record.candidates_evaluated == 2
 
 
+@pytest.mark.asyncio
+async def test_generation_progress_best_is_feasible_first():
+    events: list[tuple[str, dict]] = []
+
+    async def capture(event_type: str, data: dict) -> None:
+        events.append((event_type, data))
+
+    evolver = _build_island_evolver(
+        config=EvolutionConfig(
+            generations=1,
+            conversations_per_island=1,
+            rcc_rounds=1,
+            n_islands=2,
+            n_emigrate=0,
+            reset_interval=0,
+            n_seed_variants=0,
+        )
+    )
+    evolver._event_callback = capture
+    feasible = _make_candidate(template="feasible {{ x }}", fitness=-2.0)
+    feasible.normalized_score = 0.25
+    rejected = _make_candidate(
+        template="rejected {{ x }}", fitness=0.0, rejected=True
+    )
+    rejected.normalized_score = 1.0
+    evolver._loops[0].step_generation = AsyncMock(
+        return_value=(
+            [rejected],
+            GenerationRecord(
+                generation=0,
+                best_fitness=0.0,
+                avg_fitness=0.0,
+                best_normalized=1.0,
+                avg_normalized=1.0,
+                candidates_evaluated=1,
+            ),
+            None,
+        )
+    )
+    evolver._loops[1].step_generation = AsyncMock(
+        return_value=(
+            [feasible],
+            GenerationRecord(
+                generation=0,
+                best_fitness=-2.0,
+                avg_fitness=-2.0,
+                best_normalized=0.25,
+                avg_normalized=0.25,
+                candidates_evaluated=1,
+            ),
+            None,
+        )
+    )
+
+    result = await evolver.run()
+
+    assert result.generation_records[0].best_fitness == -2.0
+    assert result.generation_records[0].best_normalized == 0.25
+    complete = [data for event, data in events if event == "generation_complete"]
+    assert complete[0]["best_fitness"] == -2.0
+    assert complete[0]["best_normalized"] == 0.25
+
+
 # ---------------------------------------------------------------------------
 # Tests: Population management after migration
 # ---------------------------------------------------------------------------
@@ -675,7 +1180,7 @@ async def test_select_survivors_after_migration():
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         n_islands=2,
         n_emigrate=5,
         reset_interval=0,
@@ -698,6 +1203,27 @@ async def test_select_survivors_after_migration():
         assert len(pop) <= 3
 
 
+def test_select_survivors_all_keeps_every_candidate_when_cap_is_none():
+    evolver = _build_island_evolver(
+        config=EvolutionConfig(
+            evolution_profile="paper_reference",
+            conversations_per_island=1,
+            n_islands=1,
+            n_emigrate=0,
+            population_cap=None,
+            n_seed_variants=0,
+        )
+    )
+    evolver._island_populations = [[
+        _make_candidate(template="first {{ x }}", fitness=-1.0),
+        _make_candidate(template="second {{ x }}", fitness=-2.0),
+    ]]
+
+    evolver._select_survivors_all()
+
+    assert len(evolver._island_populations[0]) == 2
+
+
 # ---------------------------------------------------------------------------
 # Tests: Seed perfect fitness
 # ---------------------------------------------------------------------------
@@ -712,7 +1238,7 @@ async def test_seed_perfect_fitness_returns_immediately():
     config = EvolutionConfig(
         generations=10,
         conversations_per_island=5,
-        n_seq=1,
+        rcc_rounds=1,
         n_islands=3,
         n_emigrate=2,
         structural_mutation_probability=0.0,
@@ -725,6 +1251,30 @@ async def test_seed_perfect_fitness_returns_immediately():
     assert result.termination_reason == "perfect_fitness"
     assert result.best_candidate.fitness_score == 0.0
     assert evaluator.evaluate.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_rejected_score_zero_seed_is_not_perfect():
+    evaluator = AsyncMock(spec=FitnessEvaluator)
+    evaluator.evaluate = AsyncMock(return_value=_make_report(0.0, rejected=True))
+    evolver = _build_island_evolver(
+        config=EvolutionConfig(
+            generations=1,
+            conversations_per_island=1,
+            rcc_rounds=1,
+            n_islands=1,
+            n_emigrate=0,
+            reset_interval=0,
+            n_seed_variants=0,
+            structural_mutation_probability=0.0,
+            pr_no_parents=0.0,
+        ),
+        evaluator=evaluator,
+    )
+
+    result = await evolver.run()
+
+    assert result.termination_reason != "perfect_fitness"
 
 
 # ---------------------------------------------------------------------------
@@ -741,14 +1291,14 @@ async def test_seed_clones_have_unique_ids_and_lineage_events():
     evaluator.evaluate = AsyncMock(return_value=_make_report(-2.0))
 
     rcc = AsyncMock(spec=RCCEngine)
-    rcc.run_conversation = AsyncMock(return_value=_make_candidate())
+    rcc.run_conversation = AsyncMock(return_value=[_make_candidate(evaluated=False)])
 
     collector = LineageCollector()
 
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         n_islands=3,
         n_emigrate=0,
         reset_interval=0,
@@ -766,7 +1316,7 @@ async def test_seed_clones_have_unique_ids_and_lineage_events():
         cost_tracker=CostTracker(),
         original_template="Hello {{ x }}",
         anchor_variables={"x"},
-        cases=[TestCase(chat_history=[{"role": "user", "content": "hi"}])],
+        cases=[TestCase(id="c1", chat_history=[{"role": "user", "content": "hi"}])],
         target_model="test/model",
         generation_config=GenerationConfig(),
         purpose="test",
@@ -778,14 +1328,14 @@ async def test_seed_clones_have_unique_ids_and_lineage_events():
     events = collector.events
 
     # Find the original seed event (no parents)
-    seed_events = [e for e in events if e.mutation_type == "seed" and len(e.parent_ids) == 0]
+    seed_events = [
+        e for e in events if e.mutation_type == "seed" and not e.parent_ids
+    ]
     assert len(seed_events) == 1, "Should have exactly one original seed event"
     original_seed_id = seed_events[0].candidate_id
 
-    # Find per-island seed clone events (mutation_type="seed", parent_ids=[original_seed_id])
-    clone_events = [
-        e for e in events if e.mutation_type == "seed" and e.parent_ids == [original_seed_id]
-    ]
+    # Per-island seed clones preserve the seed's root ancestry.
+    clone_events = [e for e in events if e.mutation_type == "seed" and e.parent_ids]
     assert len(clone_events) == 3, (
         f"Expected 3 per-island seed clone events, got {len(clone_events)}"
     )
@@ -799,9 +1349,14 @@ async def test_seed_clones_have_unique_ids_and_lineage_events():
     clone_islands = sorted(e.island for e in clone_events)
     assert clone_islands == [0, 1, 2], f"Expected islands [0, 1, 2], got {clone_islands}"
 
-    # Verify each clone has parent_ids=[original_seed_id]
+    candidates_by_id = {
+        candidate.id: candidate
+        for population in evolver._island_populations
+        for candidate in population
+    }
     for clone_event in clone_events:
         assert clone_event.parent_ids == [original_seed_id]
+        assert candidates_by_id[clone_event.candidate_id].parent_ids == clone_event.parent_ids
         assert clone_event.generation == 0
 
 
@@ -821,7 +1376,7 @@ async def test_per_island_loops_created():
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         n_islands=4,
         n_emigrate=0,
         reset_interval=0,
@@ -870,14 +1425,16 @@ async def test_parallel_islands_run_completes():
     async def unique_rcc(*args, **kwargs):
         nonlocal rcc_count
         rcc_count += 1
-        return _make_candidate(template=f"parallel_{rcc_count} {{{{ x }}}}")
+        return [
+            _make_candidate(template=f"parallel_{rcc_count} {{{{ x }}}}", evaluated=False)
+        ]
 
     rcc.run_conversation = AsyncMock(side_effect=unique_rcc)
 
     config = EvolutionConfig(
         generations=2,
         conversations_per_island=2,
-        n_seq=1,
+        rcc_rounds=1,
         n_parents=3,
         n_islands=3,
         n_emigrate=1,
@@ -915,14 +1472,16 @@ async def test_migration_after_gather():
     async def unique_rcc(*args, **kwargs):
         nonlocal rcc_count
         rcc_count += 1
-        return _make_candidate(template=f"mig_{rcc_count} {{{{ x }}}}")
+        return [
+            _make_candidate(template=f"mig_{rcc_count} {{{{ x }}}}", evaluated=False)
+        ]
 
     rcc.run_conversation = AsyncMock(side_effect=unique_rcc)
 
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         n_islands=2,
         n_emigrate=1,
         reset_interval=0,
@@ -946,7 +1505,7 @@ async def test_migration_after_gather():
         cost_tracker=CostTracker(),
         original_template="Hello {{ x }}",
         anchor_variables={"x"},
-        cases=[TestCase(chat_history=[{"role": "user", "content": "hi"}])],
+        cases=[TestCase(id="c1", chat_history=[{"role": "user", "content": "hi"}])],
         target_model="test/model",
         generation_config=GenerationConfig(),
         purpose="test",
@@ -981,7 +1540,7 @@ async def test_budget_exhaustion_parallel():
     config = EvolutionConfig(
         generations=5,
         conversations_per_island=3,
-        n_seq=1,
+        rcc_rounds=1,
         n_islands=2,
         n_emigrate=1,
         budget_cap_usd=1.0,
@@ -998,3 +1557,36 @@ async def test_budget_exhaustion_parallel():
 
     assert result.termination_reason == "budget_exhausted"
     assert len(result.generation_records) == 0  # budget exceeded before gen 0
+
+
+@pytest.mark.asyncio
+async def test_initialization_reservation_rejection_returns_seed_result():
+    tracker = CostTracker(budget_cap_usd=0.0000001)
+    rcc = AsyncMock(spec=RCCEngine)
+
+    async def reject_reservation(**_kwargs):
+        await tracker.reserve("openai/gpt-4o-mini", 1, 1)
+
+    rcc.run_conversation = AsyncMock(side_effect=reject_reservation)
+    evolver = _build_island_evolver(
+        config=EvolutionConfig(
+            generations=1,
+            conversations_per_island=1,
+            rcc_rounds=1,
+            n_islands=2,
+            n_seed_variants=1,
+            budget_cap_usd=0.0000001,
+        ),
+        rcc=rcc,
+        cost_tracker=tracker,
+    )
+
+    result = await evolver.run()
+
+    assert result.termination_reason == "budget_exhausted"
+    assert result.best_candidate.evaluation is not None
+    assert all(
+        candidate.evaluation is not None
+        for population in evolver._island_populations
+        for candidate in population
+    )

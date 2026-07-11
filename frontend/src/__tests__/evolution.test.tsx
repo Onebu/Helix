@@ -117,6 +117,7 @@ describe('RunConfigForm', () => {
       expect(mockStartEvolution).toHaveBeenCalledWith({
         body: expect.objectContaining({
           prompt_id: 'test-prompt',
+          evolution_profile: 'cost_controlled',
           generations: 5,
           islands: 4,
           conversations_per_island: 5,
@@ -124,15 +125,17 @@ describe('RunConfigForm', () => {
           sample_size: null,
           sample_ratio: null,
           pr_no_parents: null,
-          n_seq: null,
-          population_cap: null,
+          rcc_rounds: null,
           n_emigrate: null,
           reset_interval: null,
           n_reset: null,
           n_top: null,
+          structural_mutation_probability: 0,
         }),
       })
     })
+    const submittedBody = mockStartEvolution.mock.calls[0][0].body
+    expect(Object.prototype.hasOwnProperty.call(submittedBody, 'population_cap')).toBe(false)
   })
 
   it('success shows run ID', async () => {
@@ -167,7 +170,7 @@ describe('RunConfigForm', () => {
     })
 
     // Advanced fields should NOT be visible by default (collapsed)
-    expect(screen.queryByLabelText('Sequential turns (n_seq)')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('RCC rounds')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Population cap')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Selection temperature')).not.toBeInTheDocument()
 
@@ -176,7 +179,7 @@ describe('RunConfigForm', () => {
 
     // Now the fields should be visible
     await waitFor(() => {
-      expect(screen.getByLabelText('Sequential turns (n_seq)')).toBeInTheDocument()
+      expect(screen.getByLabelText('RCC rounds')).toBeInTheDocument()
     })
     expect(screen.getByLabelText('Population cap')).toBeInTheDocument()
     expect(screen.getByLabelText('Emigrate count')).toBeInTheDocument()
@@ -195,6 +198,66 @@ describe('RunConfigForm', () => {
 
     // Structural mutation is a standalone card with a toggle
     expect(screen.getByText('Structural Mutation')).toBeInTheDocument()
+  })
+
+  it('submits zero when structural mutation is disabled', async () => {
+    mockStartEvolution.mockResolvedValue({
+      data: { run_id: 'abc-123', prompt_id: 'test-prompt', status: 'running', started_at: '2026-01-01T00:00:00Z' },
+    } as never)
+    renderWithProviders(<RunConfigForm promptId="test-prompt" />)
+
+    await userEvent.click(screen.getByRole('button', { name: /start evolution/i }))
+
+    await waitFor(() => expect(mockStartEvolution).toHaveBeenCalled())
+    expect(mockStartEvolution.mock.calls[0][0].body.structural_mutation_probability).toBe(0)
+  })
+
+  it('restores a useful probability when structural mutation is enabled from zero', async () => {
+    mockStartEvolution.mockResolvedValue({
+      data: { run_id: 'abc-123', prompt_id: 'test-prompt', status: 'running', started_at: '2026-01-01T00:00:00Z' },
+    } as never)
+    const user = userEvent.setup()
+    renderWithProviders(<RunConfigForm promptId="test-prompt" />)
+
+    await user.click(screen.getByRole('switch', { name: 'Structural Mutation' }))
+    await user.click(screen.getByRole('button', { name: /start evolution/i }))
+
+    await waitFor(() => expect(mockStartEvolution).toHaveBeenCalled())
+    expect(mockStartEvolution.mock.calls[0][0].body.structural_mutation_probability).toBe(0.2)
+  })
+
+  it('matches backend numeric bounds', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<RunConfigForm promptId="test-prompt" />)
+
+    await user.click(screen.getByText('Advanced Evolution Parameters'))
+
+    expect(screen.getByLabelText('Selection temperature')).toHaveAttribute('min', '0.01')
+    expect(screen.getByLabelText('Selection temperature')).toHaveAttribute('step', '0.01')
+    expect(screen.getByLabelText('Reset interval')).toHaveAttribute('min', '0')
+    expect(screen.getByLabelText('RCC rounds')).toHaveAttribute('min', '1')
+  })
+
+  it('defaults to cost controlled and warns before using paper reference scale', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<RunConfigForm promptId="test-prompt" />)
+
+    const profile = screen.getByRole('combobox', { name: 'Evolution profile' })
+    expect(profile).toHaveTextContent('Cost controlled')
+    expect(screen.queryByText(/up to about 800 candidates/i)).not.toBeInTheDocument()
+
+    await user.click(profile)
+    await user.click(screen.getByRole('option', { name: 'Paper reference' }))
+
+    expect(screen.getByText(/up to about 800 candidates/i)).toBeInTheDocument()
+  })
+
+  it('uses accessible touch targets for parameter help', async () => {
+    renderWithProviders(<RunConfigForm promptId="test-prompt" />)
+
+    const help = screen.getByRole('button', { name: 'Generations help' })
+    expect(help).toHaveClass('size-10')
+    expect(help.className).toContain('focus-visible:ring-2')
   })
 })
 

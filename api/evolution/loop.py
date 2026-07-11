@@ -21,7 +21,7 @@ from api.config.models import GenerationConfig
 from api.dataset.models import TestCase
 from api.evaluation.adaptive import AdaptiveSampler
 from api.evaluation.evaluator import FitnessEvaluator
-from api.evaluation.models import CaseResult
+from api.evaluation.models import CaseResult, EvaluationInvalidError, EvaluationReport
 from api.evaluation.sampling import SamplingStrategy
 from api.evolution.models import (
     Candidate,
@@ -31,8 +31,9 @@ from api.evolution.models import (
 )
 from api.evolution.mutator import StructuralMutator
 from api.evolution.rcc import RCCEngine
+from api.evolution.scouting import ScoutResult, canonicalize_template, is_full_report
 from api.evolution.selector import BoltzmannSelector
-from api.exceptions import GatewayError, RetryableError
+from api.exceptions import BudgetExhaustedError, GatewayError, RetryableError
 from api.gateway.cost import CostTracker
 from api.lineage.collector import LineageCollector
 from api.lineage.models import LineageEvent
@@ -95,6 +96,7 @@ class EvolutionLoop:
         self._original_template = original_template
         self._anchor_variables = anchor_variables
         self._cases = cases
+        self._expected_case_ids = {case.id for case in cases}
         self._target_model = target_model
         self._generation_config = generation_config
         self._prompt_tools = prompt_tools
@@ -137,18 +139,9 @@ class EvolutionLoop:
             generation=0,
             parent_ids=[],
         )
-        seed_report = await self._evaluator.evaluate(
-            template=seed_candidate.template,
-            cases=self._cases,
-            target_model=self._target_model,
-            generation_config=self._generation_config,
-            prompt_tools=self._prompt_tools,
-            purpose=self._purpose,
-        )
-        seed_candidate.fitness_score = seed_report.fitness.score
-        seed_candidate.normalized_score = seed_report.fitness.normalized_score
-        seed_candidate.rejected = seed_report.fitness.rejected
-        seed_candidate.evaluation = seed_report
+        seed_candidate = await self._evaluate_candidate_full(seed_candidate)
+        seed_report = seed_candidate.evaluation
+        assert seed_report is not None
         self._seed_results = seed_report.case_results
 
         if self._collector is not None:
@@ -170,8 +163,7 @@ class EvolutionLoop:
         generation_records: list[GenerationRecord] = []
         termination_reason = "generations_complete"
 
-        # Check early termination on seed (0.0 = perfect, no penalties)
-        if best_candidate.fitness_score == 0.0:
+        if self._is_perfect(best_candidate):
             return EvolutionResult(
                 best_candidate=best_candidate,
                 generation_records=generation_records,
@@ -197,7 +189,7 @@ class EvolutionLoop:
             # Track best candidate (higher = less penalized = better)
             if population:
                 gen_best = population[0]  # Already sorted by fitness desc
-                if gen_best.fitness_score > best_candidate.fitness_score:
+                if self._candidate_sort_key(gen_best) < self._candidate_sort_key(best_candidate):
                     best_candidate = gen_best
 
             # Check termination from step_generation
@@ -244,13 +236,35 @@ class EvolutionLoop:
             "perfect_fitness" if a perfect candidate was found, or
             "budget_exhausted" if the budget was exceeded mid-generation.
         """
-        # Snapshot global cost before generation for per-generation delta (COST-02)
+        full_report_cache: dict[str, EvaluationReport] = {}
+        for candidate in population:
+            report = candidate.evaluation
+            if report is None or not is_full_report(report, self._expected_case_ids):
+                raise EvaluationInvalidError(
+                    "Incoming population candidate lacks an exact full evaluation"
+                )
+            full_report_cache[canonicalize_template(candidate.template)] = report.model_copy(
+                deep=True
+            )
+
+        completed_paper_drafts: list[Candidate] = []
+
+        async def evaluate_paper_draft(candidate: Candidate) -> Candidate:
+            canonical = canonicalize_template(candidate.template)
+            cached = full_report_cache.get(canonical)
+            if cached is None:
+                candidate = await self._evaluate_candidate_full(candidate)
+                assert candidate.evaluation is not None
+                full_report_cache[canonical] = candidate.evaluation.model_copy(deep=True)
+            else:
+                candidate = self._attach_full_report(candidate, cached.model_copy(deep=True))
+            completed_paper_drafts.append(candidate)
+            return candidate
+
         cost_before_gen = self._cost_tracker.summary()
-
-        new_candidates: list[Candidate] = []
         termination_reason: str | None = None
+        drafts: list[tuple[Candidate, bool]] = []
 
-        # Determine if this is a checkpoint generation (full eval for regression detection)
         is_checkpoint = (
             self._adaptive_sampler is not None
             and self._config.checkpoint_interval > 0
@@ -258,9 +272,7 @@ class EvolutionLoop:
             and generation % self._config.checkpoint_interval == 0
         )
 
-        # Conversation loop
         for conv in range(self._config.conversations_per_island):
-            # Check budget at conversation-level granularity (COST-03)
             if self._budget_exceeded():
                 termination_reason = "budget_exhausted"
                 logger.info(
@@ -270,22 +282,27 @@ class EvolutionLoop:
                 )
                 break
 
-            # Sample parent count with Pr_no_parents probability
             n_parents_this = self._sample_parent_count()
-
-            # Select parents
             parents = self._selector.select(population, n_parents_this, self._config.temperature)
 
-            # Run RCC conversation (with error resilience for transient API failures)
             try:
-                candidate = await self._rcc.run_conversation(
+                conversation_drafts = list(await self._rcc.run_conversation(
                     parents=parents,
                     original_template=self._original_template,
                     anchor_variables=self._anchor_variables,
                     purpose=self._purpose,
-                    n_seq=self._config.n_seq,
+                    rcc_rounds=self._config.rcc_rounds,
                     generation=generation,
-                )
+                    evaluate_draft=(
+                        evaluate_paper_draft
+                        if self._config.retain_intermediate_children
+                        else None
+                    ),
+                ))
+            except BudgetExhaustedError:
+                termination_reason = "budget_exhausted"
+                drafts.extend((candidate, False) for candidate in completed_paper_drafts)
+                break
             except RetryableError as exc:
                 logger.warning(
                     "RCC conversation %d failed (gen %d, island %d): %s — skipping (transient)",
@@ -296,8 +313,6 @@ class EvolutionLoop:
                 )
                 continue
             except GatewayError as exc:
-                # Non-retryable errors (400 Bad Request) — log and re-raise
-                # to stop the evolution since every conversation will fail the same way
                 logger.error(
                     "RCC conversation %d failed (gen %d, island %d): %s — aborting (non-retryable)",
                     conv,
@@ -307,16 +322,34 @@ class EvolutionLoop:
                 )
                 raise
 
-            # Apply structural mutation probabilistically
-            applied_structural = False
-            if random.random() < self._config.structural_mutation_probability:
+            structural_candidate_id: str | None = None
+            if (
+                conversation_drafts
+                and random.random() < self._config.structural_mutation_probability
+            ):
+                original = conversation_drafts[-1]
                 try:
-                    candidate = await self._mutator.mutate(
-                        candidate,
+                    mutated = await self._mutator.mutate(
+                        original,
                         self._original_template,
                         self._anchor_variables,
                     )
-                    applied_structural = True
+                    if canonicalize_template(mutated.template) != canonicalize_template(
+                        original.template
+                    ):
+                        mutated.evaluation = None
+                        mutated.fitness_score = 0.0
+                        mutated.normalized_score = 0.0
+                        mutated.rejected = False
+                        if original.evaluation is not None:
+                            conversation_drafts.append(mutated)
+                        else:
+                            conversation_drafts[-1] = mutated
+                        structural_candidate_id = mutated.id
+                except BudgetExhaustedError:
+                    termination_reason = "budget_exhausted"
+                    drafts.extend((candidate, False) for candidate in conversation_drafts)
+                    break
                 except RetryableError as exc:
                     logger.warning(
                         "Structural mutation failed (gen %d, island %d): %s — using RCC result",
@@ -327,52 +360,101 @@ class EvolutionLoop:
                 except GatewayError:
                     raise
 
-            # Apply subset sampling if configured (SAMP-02 / EVO-06)
-            if is_checkpoint:
-                # Checkpoint: evaluate ALL cases to catch regressions
-                eval_cases = SamplingStrategy.full(self._cases)
-            elif (
-                self._config.sample_size is not None or self._config.sample_ratio is not None
-            ) and self._seed_results is not None:
-                # Normal generation: use smart_subset with optional adaptive weights
-                adaptive_weights = (
-                    self._adaptive_sampler.get_weights(self._cases)
-                    if self._adaptive_sampler
-                    else None
-                )
-                eval_cases = SamplingStrategy.smart_subset(
-                    cases=self._cases,
-                    previous_results=self._seed_results,
-                    sample_size=self._config.sample_size,
-                    sample_ratio=self._config.sample_ratio,
-                    adaptive_weights=adaptive_weights,
-                )
-            else:
-                eval_cases = self._cases
-
-            # Evaluate candidate
-            report = await self._evaluator.evaluate(
-                template=candidate.template,
-                cases=eval_cases,
-                target_model=self._target_model,
-                generation_config=self._generation_config,
-                prompt_tools=self._prompt_tools,
-                purpose=self._purpose,
+            drafts.extend(
+                (candidate, candidate.id == structural_candidate_id)
+                for candidate in conversation_drafts
             )
-            candidate.fitness_score = report.fitness.score
-            candidate.normalized_score = report.fitness.normalized_score
-            candidate.rejected = report.fitness.rejected
-            candidate.evaluation = report
 
-            # Determine mutation type (used for both lineage and event callback)
-            if applied_structural:
-                mut_type = "structural"
-            elif not candidate.parent_ids:
-                mut_type = "fresh"
+        seen_templates = {canonicalize_template(candidate.template) for candidate in population}
+        distinct_drafts: list[tuple[Candidate, bool]] = []
+        for candidate, applied_structural in drafts:
+            canonical = canonicalize_template(candidate.template)
+            if canonical in seen_templates:
+                continue
+            seen_templates.add(canonical)
+            distinct_drafts.append((candidate, applied_structural))
+
+        new_candidates: list[Candidate] = []
+        mutation_types: dict[str, str] = {}
+        pending: list[tuple[Candidate, bool]] = []
+        for candidate, applied_structural in distinct_drafts:
+            if candidate.evaluation is None:
+                pending.append((candidate, applied_structural))
+                continue
+            if not is_full_report(candidate.evaluation, self._expected_case_ids):
+                raise EvaluationInvalidError("RCC draft evaluation did not cover every case")
+            new_candidates.append(candidate)
+            mutation_types[candidate.id] = self._mutation_type(candidate, applied_structural)
+
+        sampling_enabled = (
+            not is_checkpoint
+            and (
+                self._config.sample_size is not None
+                or self._config.sample_ratio is not None
+            )
+        )
+        promoted: list[tuple[Candidate, bool]]
+        if sampling_enabled and pending:
+            elite = self._best_full_candidate(population)
+            previous_results = (
+                elite.evaluation.case_results
+                if elite is not None and elite.evaluation is not None
+                else self._seed_results
+            )
+            adaptive_weights = (
+                self._adaptive_sampler.get_weights(self._cases)
+                if self._adaptive_sampler
+                else None
+            )
+            scout_cases = SamplingStrategy.smart_subset(
+                cases=self._cases,
+                previous_results=previous_results,
+                sample_size=self._config.sample_size,
+                sample_ratio=self._config.sample_ratio,
+                adaptive_weights=adaptive_weights,
+            )
+            structural_by_id = {candidate.id: applied for candidate, applied in pending}
+            scouts = []
+            for candidate, _ in pending:
+                try:
+                    report = await self._evaluate_candidate(candidate, scout_cases)
+                except BudgetExhaustedError:
+                    termination_reason = "budget_exhausted"
+                    break
+                scouts.append(ScoutResult(candidate=candidate, report=report))
+            if termination_reason == "budget_exhausted":
+                promoted = []
             else:
-                mut_type = "rcc"
+                scouts.sort(
+                    key=lambda scout: (
+                        scout.report.fitness.rejected,
+                        -scout.report.fitness.score,
+                    )
+                )
+                promoted = [
+                    (scout.candidate, structural_by_id[scout.candidate.id])
+                    for scout in scouts[: self._config.promotions_per_island]
+                ]
+        else:
+            promoted = pending
 
-            # Emit candidate_evaluated event
+        for candidate, applied_structural in promoted:
+            if self._budget_exceeded():
+                termination_reason = "budget_exhausted"
+                break
+            try:
+                candidate = await self._evaluate_candidate_full(candidate)
+            except BudgetExhaustedError:
+                termination_reason = "budget_exhausted"
+                break
+            new_candidates.append(candidate)
+            mutation_types[candidate.id] = self._mutation_type(candidate, applied_structural)
+
+        for candidate in new_candidates:
+            mut_type = mutation_types[candidate.id]
+            report = candidate.evaluation
+            assert report is not None
+            assert is_full_report(report, self._expected_case_ids)
             await self._emit(
                 "candidate_evaluated",
                 {
@@ -383,10 +465,12 @@ class EvolutionLoop:
                     "rejected": candidate.rejected,
                     "mutation_type": mut_type,
                     "island": island,
+                    "parent_ids": candidate.parent_ids,
+                    "template": candidate.template,
+                    "cases_passed": sum(result.passed for result in report.case_results),
+                    "total_cases": report.total_cases,
                 },
             )
-
-            # Record lineage event for this candidate
             if self._collector is not None:
                 self._collector.record(
                     LineageEvent(
@@ -397,23 +481,14 @@ class EvolutionLoop:
                         fitness_score=candidate.fitness_score,
                         normalized_score=candidate.normalized_score,
                         rejected=candidate.rejected,
-                        mutation_type=mut_type,  # reuse computed value above
+                        mutation_type=mut_type,
                         template=candidate.template,
                     )
                 )
 
-            # Perfect fitness early termination (EVO-08): 0.0 = no penalties
-            if candidate.fitness_score == 0.0:
-                new_candidates.append(candidate)
-                termination_reason = "perfect_fitness"
-                logger.info(
-                    "Perfect fitness found at generation %d, conversation %d",
-                    generation,
-                    conv,
-                )
-                break
-
-            new_candidates.append(candidate)
+        if any(self._is_perfect(candidate) for candidate in new_candidates):
+            termination_reason = "perfect_fitness"
+            logger.info("Perfect fitness found at generation %d", generation)
 
         # Warn if all conversations failed (likely a systematic error, not transient)
         if len(new_candidates) == 0 and self._config.conversations_per_island > 0:
@@ -426,7 +501,7 @@ class EvolutionLoop:
 
         # Update adaptive sampler with best candidate's results (EVO-04)
         if self._adaptive_sampler and new_candidates:
-            best_new = max(new_candidates, key=lambda c: c.fitness_score)
+            best_new = min(new_candidates, key=self._candidate_sort_key)
             if best_new.evaluation:
                 self._adaptive_sampler.update(best_new.evaluation.case_results)
                 # On checkpoint: reset streaks for any case that failed (EVO-05)
@@ -454,7 +529,7 @@ class EvolutionLoop:
                             fitness_score=c.fitness_score,
                             normalized_score=c.normalized_score,
                             rejected=c.rejected,
-                            mutation_type="rcc",
+                            mutation_type=mutation_types[c.id],
                             survived=False,
                             template=c.template,
                         )
@@ -476,15 +551,73 @@ class EvolutionLoop:
         all_normalized = [c.normalized_score for c in population] if population else [0.0]
         record = GenerationRecord(
             generation=generation,
-            best_fitness=max(all_fitnesses),
+            best_fitness=population[0].fitness_score if population else 0.0,
             avg_fitness=sum(all_fitnesses) / len(all_fitnesses),
-            best_normalized=max(all_normalized),
+            best_normalized=population[0].normalized_score if population else 0.0,
             avg_normalized=sum(all_normalized) / len(all_normalized),
             cost_summary=gen_cost_summary,
             candidates_evaluated=len(new_candidates),
         )
 
         return population, record, termination_reason
+
+    async def _evaluate_candidate(
+        self,
+        candidate: Candidate,
+        cases: list[TestCase],
+    ) -> EvaluationReport:
+        """Evaluate without attaching a possibly partial report to the candidate."""
+        return await self._evaluator.evaluate(
+            template=candidate.template,
+            cases=cases,
+            target_model=self._target_model,
+            generation_config=self._generation_config,
+            prompt_tools=self._prompt_tools,
+            purpose=self._purpose,
+        )
+
+    async def _evaluate_candidate_full(self, candidate: Candidate) -> Candidate:
+        """Attach fitness only after exact full-suite coverage is verified."""
+        report = await self._evaluate_candidate(candidate, self._cases)
+        if not is_full_report(report, self._expected_case_ids):
+            raise EvaluationInvalidError("Candidate evaluation did not cover every case exactly")
+        return self._attach_full_report(candidate, report)
+
+    @staticmethod
+    def _attach_full_report(candidate: Candidate, report: EvaluationReport) -> Candidate:
+        """Copy verified full-report fields onto a candidate."""
+        candidate.fitness_score = report.fitness.score
+        candidate.normalized_score = report.fitness.normalized_score
+        candidate.rejected = report.fitness.rejected
+        candidate.evaluation = report
+        return candidate
+
+    def _best_full_candidate(self, population: list[Candidate]) -> Candidate | None:
+        full_candidates = [
+            candidate
+            for candidate in population
+            if candidate.evaluation is not None
+            and is_full_report(candidate.evaluation, self._expected_case_ids)
+        ]
+        return min(full_candidates, key=self._candidate_sort_key) if full_candidates else None
+
+    @staticmethod
+    def _candidate_sort_key(candidate: Candidate) -> tuple[bool, float]:
+        """Rank feasible candidates before rejected ones, then by raw fitness."""
+        return candidate.rejected, -candidate.fitness_score
+
+    @staticmethod
+    def _mutation_type(candidate: Candidate, applied_structural: bool) -> str:
+        if applied_structural:
+            return "structural"
+        return "fresh" if not candidate.parent_ids else "rcc"
+
+    @staticmethod
+    def _is_perfect(candidate: Candidate) -> bool:
+        report = candidate.evaluation
+        if report is None or report.fitness.rejected or not report.case_results:
+            return False
+        return all(result.passed for result in report.case_results)
 
     def _budget_exceeded(self) -> bool:
         """Check if the cost tracker total exceeds the configured budget cap.
@@ -501,6 +634,8 @@ class EvolutionLoop:
         With probability pr_no_parents, returns 0 (fresh generation).
         Otherwise, returns random.randint(1, config.n_parents).
         """
+        if self._config.n_parents == 0:
+            return 0
         if random.random() < self._config.pr_no_parents:
             return 0
         return random.randint(1, self._config.n_parents)
@@ -516,8 +651,7 @@ class EvolutionLoop:
         Returns:
             Sorted and capped population, by fitness descending.
         """
-        # Sort by fitness descending (less negative = better)
-        population.sort(key=lambda c: c.fitness_score, reverse=True)
+        population.sort(key=self._candidate_sort_key)
 
         # Cap at population_cap
         return population[: self._config.population_cap]

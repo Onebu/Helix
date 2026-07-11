@@ -6,7 +6,6 @@ import json
 
 import httpx
 
-
 # -- Helpers --
 
 
@@ -122,6 +121,28 @@ async def test_add_case_returns_201(client: httpx.AsyncClient):
     assert data["tags"] == ["smoke"]
 
 
+async def test_source_metadata_round_trips_through_crud(client: httpx.AsyncClient):
+    await _register_prompt(client)
+    source_metadata = {"type": "observability", "external_id": "item-1"}
+
+    created = await client.post(
+        "/api/prompts/test-prompt/dataset",
+        json={
+            "name": "imported-case",
+            "variables": {"name": "test"},
+            "source_metadata": source_metadata,
+        },
+    )
+
+    assert created.status_code == 201
+    assert created.json()["source_metadata"] == source_metadata
+    fetched = await client.get(
+        f"/api/prompts/test-prompt/dataset/{created.json()['id']}"
+    )
+    assert fetched.status_code == 200
+    assert fetched.json()["source_metadata"] == source_metadata
+
+
 # -- PUT /api/prompts/{id}/dataset/{case_id} --
 
 
@@ -141,6 +162,25 @@ async def test_update_case(client: httpx.AsyncClient):
     assert data["tier"] == "critical"
     # Original fields should be preserved
     assert data["variables"] == {"name": "world"}
+
+
+async def test_update_case_replaces_source_metadata(client: httpx.AsyncClient):
+    await _register_prompt(client)
+    created = await client.post(
+        "/api/prompts/test-prompt/dataset",
+        json={
+            "variables": {"name": "world"},
+            "source_metadata": {"external_id": "old"},
+        },
+    )
+
+    response = await client.put(
+        f"/api/prompts/test-prompt/dataset/{created.json()['id']}",
+        json={"source_metadata": {"external_id": "new"}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["source_metadata"] == {"external_id": "new"}
 
 
 # -- DELETE /api/prompts/{id}/dataset/{case_id} --

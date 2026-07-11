@@ -24,18 +24,18 @@ from api.dataset.models import TestCase
 from api.evaluation.evaluator import FitnessEvaluator
 from api.evaluation.models import (
     CaseResult,
+    EvaluationInvalidError,
     EvaluationReport,
     FitnessScore,
 )
 from api.evolution.loop import EvolutionLoop
-from api.evolution.models import GenerationRecord
-from api.evolution.models import Candidate, EvolutionConfig
+from api.evolution.models import Candidate, EvolutionConfig, GenerationRecord
 from api.evolution.mutator import StructuralMutator
 from api.evolution.rcc import RCCEngine
 from api.evolution.selector import BoltzmannSelector
 from api.gateway.cost import CostTracker
+from api.lineage.collector import LineageCollector
 from api.types import LLMResponse, ModelRole
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -70,6 +70,20 @@ def _make_candidate(template: str = "evolved {{ x }}", generation: int = 0) -> C
     return Candidate(template=template, generation=generation, parent_ids=[])
 
 
+def _make_population_candidate(
+    template: str = "Hello {{ x }}",
+    generation: int = 0,
+    score: float = -2.0,
+) -> Candidate:
+    candidate = _make_candidate(template, generation)
+    report = _make_report(score)
+    candidate.fitness_score = report.fitness.score
+    candidate.normalized_score = report.fitness.normalized_score
+    candidate.rejected = report.fitness.rejected
+    candidate.evaluation = report
+    return candidate
+
+
 def _make_llm_response(cost_usd: float = 0.001) -> LLMResponse:
     """Create a minimal LLMResponse for cost tracking."""
     return LLMResponse(
@@ -95,7 +109,7 @@ def _build_loop(
         config = EvolutionConfig(
             generations=1,
             conversations_per_island=2,
-            n_seq=1,
+        rcc_rounds=1,
             n_parents=3,
             structural_mutation_probability=0.0,
             pr_no_parents=0.0,
@@ -105,7 +119,14 @@ def _build_loop(
         evaluator.evaluate = AsyncMock(return_value=_make_report(-2.0))
     if rcc is None:
         rcc = AsyncMock(spec=RCCEngine)
-        rcc.run_conversation = AsyncMock(return_value=_make_candidate())
+        rcc_count = 0
+
+        async def unique_rcc(**kwargs):
+            nonlocal rcc_count
+            rcc_count += 1
+            return [_make_candidate(template=f"evolved_{rcc_count} {{{{ x }}}}")]
+
+        rcc.run_conversation = AsyncMock(side_effect=unique_rcc)
     if mutator is None:
         mutator = AsyncMock(spec=StructuralMutator)
         mutator.mutate = AsyncMock(return_value=_make_candidate())
@@ -121,7 +142,7 @@ def _build_loop(
         cost_tracker=cost_tracker,
         original_template="Hello {{ x }}",
         anchor_variables={"x"},
-        cases=[TestCase(chat_history=[{"role": "user", "content": "hi"}])],
+        cases=[TestCase(id="c1", chat_history=[{"role": "user", "content": "hi"}])],
         target_model="test/model",
         generation_config=GenerationConfig(),
         purpose="test",
@@ -150,13 +171,17 @@ async def test_single_generation_completes():
 async def test_early_termination_perfect_fitness():
     """Candidate with score 0.0 (perfect) terminates immediately."""
     evaluator = AsyncMock(spec=FitnessEvaluator)
-    # Seed evaluation returns -2.0, then first conv candidate returns 0.0 (perfect)
-    evaluator.evaluate = AsyncMock(side_effect=[_make_report(-2.0), _make_report(0.0)])
+
+    async def evaluate(**kwargs):
+        score = 0.0 if kwargs["template"] == "evolved_1 {{ x }}" else -2.0
+        return _make_report(score)
+
+    evaluator.evaluate = AsyncMock(side_effect=evaluate)
 
     config = EvolutionConfig(
         generations=10,
         conversations_per_island=5,
-        n_seq=1,
+        rcc_rounds=1,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
     )
@@ -165,8 +190,8 @@ async def test_early_termination_perfect_fitness():
 
     assert result.termination_reason == "perfect_fitness"
     assert result.best_candidate.fitness_score == 0.0
-    # Should have stopped after just 2 evaluations (seed + first conv)
-    assert evaluator.evaluate.call_count == 2
+    # Scouting is disabled, so every distinct draft receives a full evaluation.
+    assert evaluator.evaluate.call_count == 1 + config.conversations_per_island
 
 
 @pytest.mark.asyncio
@@ -178,7 +203,7 @@ async def test_budget_cap_terminates():
     config = EvolutionConfig(
         generations=5,
         conversations_per_island=3,
-        n_seq=1,
+        rcc_rounds=1,
         budget_cap_usd=1.0,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
@@ -213,7 +238,7 @@ async def test_budget_checked_per_conversation():
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=5,
-        n_seq=1,
+        rcc_rounds=1,
         budget_cap_usd=1.0,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
@@ -244,7 +269,7 @@ async def test_generation_cost_tracking():
     config = EvolutionConfig(
         generations=2,
         conversations_per_island=2,
-        n_seq=1,
+        rcc_rounds=1,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
     )
@@ -267,7 +292,7 @@ async def test_population_capped():
     config = EvolutionConfig(
         generations=3,
         conversations_per_island=5,
-        n_seq=1,
+        rcc_rounds=1,
         population_cap=3,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
@@ -291,7 +316,7 @@ async def test_population_capped():
     async def unique_rcc(*args, **kwargs):
         nonlocal rcc_count
         rcc_count += 1
-        return _make_candidate(template=f"evolved_{rcc_count} {{{{ x }}}}")
+        return [_make_candidate(template=f"evolved_{rcc_count} {{{{ x }}}}")]
 
     rcc.run_conversation = AsyncMock(side_effect=unique_rcc)
 
@@ -318,7 +343,7 @@ async def test_heavily_penalized_candidates_ranked_lower():
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=2,
-        n_seq=1,
+        rcc_rounds=1,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
     )
@@ -336,13 +361,13 @@ async def test_pr_no_parents_fresh_generation(mock_random):
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=3,
-        n_seq=1,
+        rcc_rounds=1,
         pr_no_parents=1.0,
         structural_mutation_probability=0.0,
     )
 
     rcc = AsyncMock(spec=RCCEngine)
-    rcc.run_conversation = AsyncMock(return_value=_make_candidate())
+    rcc.run_conversation = AsyncMock(return_value=[_make_candidate()])
 
     mock_random.random.return_value = 0.5
 
@@ -366,7 +391,7 @@ async def test_structural_mutation_applied_probabilistically(mock_random):
     config_always = EvolutionConfig(
         generations=1,
         conversations_per_island=2,
-        n_seq=1,
+        rcc_rounds=1,
         structural_mutation_probability=1.0,
         pr_no_parents=0.0,
     )
@@ -380,7 +405,7 @@ async def test_structural_mutation_applied_probabilistically(mock_random):
     config_never = EvolutionConfig(
         generations=1,
         conversations_per_island=2,
-        n_seq=1,
+        rcc_rounds=1,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
     )
@@ -408,7 +433,7 @@ async def test_multi_generation_evolution():
     config = EvolutionConfig(
         generations=3,
         conversations_per_island=2,
-        n_seq=1,
+        rcc_rounds=1,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
     )
@@ -428,7 +453,7 @@ async def test_termination_reason_generations_complete():
     config = EvolutionConfig(
         generations=2,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
     )
@@ -448,7 +473,7 @@ async def test_initial_candidate_evaluated():
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
     )
@@ -469,8 +494,7 @@ async def test_initial_candidate_evaluated():
 async def test_step_generation_returns_tuple():
     """step_generation returns (list[Candidate], GenerationRecord, str|None) tuple."""
     loop = _build_loop()
-    seed = _make_candidate(template="Hello {{ x }}", generation=0)
-    seed.fitness_score = -2.0
+    seed = _make_population_candidate()
 
     result = await loop.step_generation(population=[seed], generation=0)
 
@@ -495,21 +519,20 @@ async def test_step_generation_runs_conversations():
     async def unique_rcc(*args, **kwargs):
         nonlocal rcc_count
         rcc_count += 1
-        return _make_candidate(template=f"evolved_{rcc_count} {{{{ x }}}}")
+        return [_make_candidate(template=f"evolved_{rcc_count} {{{{ x }}}}")]
 
     rcc.run_conversation = AsyncMock(side_effect=unique_rcc)
 
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=3,
-        n_seq=1,
+        rcc_rounds=1,
         n_parents=3,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
     )
     loop = _build_loop(config=config, evaluator=evaluator, rcc=rcc)
-    seed = _make_candidate(template="Hello {{ x }}", generation=0)
-    seed.fitness_score = -2.0
+    seed = _make_population_candidate()
 
     population, record, reason = await loop.step_generation(population=[seed], generation=0)
 
@@ -529,18 +552,17 @@ async def test_step_generation_perfect_fitness():
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=5,
-        n_seq=1,
+        rcc_rounds=1,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
     )
     loop = _build_loop(config=config, evaluator=evaluator)
-    seed = _make_candidate(template="Hello {{ x }}", generation=0)
-    seed.fitness_score = -2.0
+    seed = _make_population_candidate()
 
-    population, record, reason = await loop.step_generation(population=[seed], generation=0)
+    _population, _record, reason = await loop.step_generation(population=[seed], generation=0)
 
     assert reason == "perfect_fitness"
-    assert evaluator.evaluate.call_count == 1
+    assert evaluator.evaluate.call_count == config.conversations_per_island
 
 
 @pytest.mark.asyncio
@@ -552,7 +574,7 @@ async def test_step_generation_budget_exhausted():
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=5,
-        n_seq=1,
+        rcc_rounds=1,
         budget_cap_usd=1.0,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
@@ -562,10 +584,9 @@ async def test_step_generation_budget_exhausted():
     evaluator.evaluate = AsyncMock(return_value=_make_report(-2.0))
 
     loop = _build_loop(config=config, evaluator=evaluator, cost_tracker=cost_tracker)
-    seed = _make_candidate(template="Hello {{ x }}", generation=0)
-    seed.fitness_score = -2.0
+    seed = _make_population_candidate()
 
-    population, record, reason = await loop.step_generation(population=[seed], generation=0)
+    _population, _record, reason = await loop.step_generation(population=[seed], generation=0)
 
     assert reason == "budget_exhausted"
 
@@ -591,24 +612,243 @@ async def test_step_generation_population_capped():
     async def unique_rcc(*args, **kwargs):
         nonlocal rcc_count
         rcc_count += 1
-        return _make_candidate(template=f"evolved_{rcc_count} {{{{ x }}}}")
+        return [_make_candidate(template=f"evolved_{rcc_count} {{{{ x }}}}")]
 
     rcc.run_conversation = AsyncMock(side_effect=unique_rcc)
 
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=10,
-        n_seq=1,
+        rcc_rounds=1,
         population_cap=3,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
     )
     loop = _build_loop(config=config, evaluator=evaluator, rcc=rcc)
 
-    seeds = [_make_candidate(template=f"seed_{i} {{{{ x }}}}", generation=0) for i in range(5)]
-    for i, s in enumerate(seeds):
-        s.fitness_score = -0.5 * i
+    seeds = [
+        _make_population_candidate(
+            template=f"seed_{i} {{{{ x }}}}",
+            score=-0.5 * i,
+        )
+        for i in range(5)
+    ]
 
-    population, record, reason = await loop.step_generation(population=seeds, generation=0)
+    population, _record, _reason = await loop.step_generation(population=seeds, generation=0)
 
     assert len(population) <= 3
+
+
+def test_n_parents_zero_never_calls_randint() -> None:
+    loop = _build_loop(
+        config=EvolutionConfig(
+            conversations_per_island=1,
+            rcc_rounds=1,
+            n_parents=0,
+            pr_no_parents=0.0,
+            structural_mutation_probability=0.0,
+        )
+    )
+
+    with patch("api.evolution.loop.random") as mock_random:
+        assert loop._sample_parent_count() == 0
+
+    mock_random.randint.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_structural_event_requires_changed_template() -> None:
+    events: list[tuple[str, dict]] = []
+
+    async def callback(event_type: str, data: dict) -> None:
+        events.append((event_type, data))
+
+    rcc = AsyncMock(spec=RCCEngine)
+    rcc.run_conversation = AsyncMock(
+        return_value=[Candidate(template="Draft {{ x }}", parent_ids=["parent"])]
+    )
+    mutator = AsyncMock(spec=StructuralMutator)
+    mutator.mutate = AsyncMock(
+        return_value=Candidate(template="Draft {{ x }}\n", parent_ids=["parent"])
+    )
+    loop = _build_loop(
+        config=EvolutionConfig(
+            conversations_per_island=1,
+            rcc_rounds=1,
+            structural_mutation_probability=1.0,
+            pr_no_parents=0.0,
+        ),
+        rcc=rcc,
+        mutator=mutator,
+    )
+    loop._event_callback = callback
+
+    await loop.step_generation([_make_population_candidate("Seed {{ x }}")], 0)
+
+    evaluated = [data for event, data in events if event == "candidate_evaluated"]
+    assert evaluated[0]["mutation_type"] == "rcc"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("has_partial_report", [False, True])
+async def test_step_generation_rejects_population_without_exact_full_report(
+    has_partial_report: bool,
+) -> None:
+    loop = _build_loop()
+    incoming = _make_candidate("Incoming {{ x }}")
+    if has_partial_report:
+        incoming.evaluation = EvaluationReport(
+            fitness=FitnessScore(score=-1.0),
+            case_results=[CaseResult(case_id="other", score=-1.0, passed=False)],
+            total_cases=1,
+        )
+
+    with pytest.raises(EvaluationInvalidError):
+        await loop.step_generation([incoming], 0)
+
+    loop._rcc.run_conversation.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_paper_rounds_and_structural_child_are_all_retained_and_recorded() -> None:
+    events: list[tuple[str, dict]] = []
+    returned_rounds: list[Candidate] = []
+
+    async def callback(event_type: str, data: dict) -> None:
+        events.append((event_type, data))
+
+    async def paper_rcc(**kwargs):
+        evaluate_draft = kwargs["evaluate_draft"]
+        assert evaluate_draft is not None
+        parent_ids = [parent.id for parent in kwargs["parents"]]
+        for name in ("Round one {{ x }}", "Round two {{ x }}"):
+            returned_rounds.append(
+                await evaluate_draft(Candidate(template=name, parent_ids=parent_ids))
+            )
+        return returned_rounds
+
+    async def mutate(candidate, *_args):
+        return Candidate(
+            template="Structural child {{ x }}",
+            parent_ids=[candidate.id],
+        )
+
+    evaluator = AsyncMock(spec=FitnessEvaluator)
+    evaluator.evaluate = AsyncMock(
+        side_effect=[_make_report(-3.0), _make_report(-2.0), _make_report(-1.0)]
+    )
+    rcc = AsyncMock(spec=RCCEngine)
+    rcc.run_conversation = AsyncMock(side_effect=paper_rcc)
+    mutator = AsyncMock(spec=StructuralMutator)
+    mutator.mutate = AsyncMock(side_effect=mutate)
+    loop = _build_loop(
+        config=EvolutionConfig(
+            evolution_profile="paper_reference",
+            conversations_per_island=1,
+            rcc_rounds=2,
+            structural_mutation_probability=1.0,
+            pr_no_parents=0.0,
+        ),
+        evaluator=evaluator,
+        rcc=rcc,
+        mutator=mutator,
+    )
+    loop._event_callback = callback
+    loop._collector = LineageCollector()
+
+    population, record, _ = await loop.step_generation(
+        [_make_population_candidate()],
+        0,
+    )
+
+    templates = {candidate.template for candidate in population}
+    assert templates >= {
+        "Round one {{ x }}",
+        "Round two {{ x }}",
+        "Structural child {{ x }}",
+    }
+    assert evaluator.evaluate.call_count == 3
+    assert record.candidates_evaluated == 3
+    structural = next(
+        candidate for candidate in population if candidate.template == "Structural child {{ x }}"
+    )
+    assert structural.parent_ids == [returned_rounds[-1].id]
+    evaluated_events = [data for event, data in events if event == "candidate_evaluated"]
+    assert len(evaluated_events) == 3
+    assert [data["mutation_type"] for data in evaluated_events].count("structural") == 1
+    structural_lineage = [
+        event for event in loop._collector.events if event.mutation_type == "structural"
+    ]
+    assert len(structural_lineage) == 1
+    assert structural_lineage[0].parent_ids == [returned_rounds[-1].id]
+
+
+@pytest.mark.asyncio
+async def test_paper_duplicate_callbacks_share_full_evaluation_before_population_dedup() -> None:
+    callback_results: list[Candidate] = []
+
+    async def duplicate_rcc(**kwargs):
+        evaluated = await kwargs["evaluate_draft"](
+            Candidate(template="Duplicate {{ x }}", parent_ids=["parent"])
+        )
+        callback_results.append(evaluated)
+        return [evaluated]
+
+    evaluator = AsyncMock(spec=FitnessEvaluator)
+    evaluator.evaluate = AsyncMock(return_value=_make_report(-1.0))
+    rcc = AsyncMock(spec=RCCEngine)
+    rcc.run_conversation = AsyncMock(side_effect=duplicate_rcc)
+    loop = _build_loop(
+        config=EvolutionConfig(
+            evolution_profile="paper_reference",
+            conversations_per_island=2,
+            rcc_rounds=1,
+            structural_mutation_probability=0.0,
+            pr_no_parents=0.0,
+        ),
+        evaluator=evaluator,
+        rcc=rcc,
+    )
+
+    population, record, _ = await loop.step_generation(
+        [_make_population_candidate()],
+        0,
+    )
+
+    assert len(callback_results) == 2
+    assert all(candidate.evaluation is not None for candidate in callback_results)
+    assert callback_results[0].evaluation is not callback_results[1].evaluation
+    assert evaluator.evaluate.call_count == 1
+    assert sum(candidate.template == "Duplicate {{ x }}" for candidate in population) == 1
+    assert record.candidates_evaluated == 1
+
+
+@pytest.mark.asyncio
+async def test_step_generation_handles_reservation_rejection():
+    tracker = CostTracker(budget_cap_usd=0.0000001)
+    rcc = AsyncMock(spec=RCCEngine)
+
+    async def reject_reservation(**_kwargs):
+        await tracker.reserve("openai/gpt-4o-mini", 1, 1)
+
+    rcc.run_conversation = AsyncMock(side_effect=reject_reservation)
+    loop = _build_loop(
+        config=EvolutionConfig(
+            generations=1,
+            conversations_per_island=1,
+            rcc_rounds=1,
+            n_parents=1,
+            pr_no_parents=0.0,
+            structural_mutation_probability=0.0,
+            budget_cap_usd=0.0000001,
+        ),
+        rcc=rcc,
+        cost_tracker=tracker,
+    )
+
+    updated, _record, reason = await loop.step_generation(
+        [_make_population_candidate()], generation=0
+    )
+
+    assert reason == "budget_exhausted"
+    assert updated[0].evaluation is not None

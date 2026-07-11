@@ -12,10 +12,21 @@ Tests verify:
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
+from datetime import UTC, datetime
+from types import SimpleNamespace
 
+import pytest
 
+from api.config.models import GenerationConfig
+from api.exceptions import BudgetExhaustedError
 from api.web.event_bus import EventBus
-from api.web.run_manager import RunManager
+from api.web.run_manager import RunInfo, RunManager
+
+
+async def _await_run(rm: RunManager, run_id: str) -> None:
+    with suppress(asyncio.CancelledError, Exception):
+        await asyncio.wait_for(asyncio.shield(rm._runs[run_id].task), timeout=1)
 
 
 # ---------------------------------------------------------------------------
@@ -37,14 +48,13 @@ async def test_start_run_with_event_bus_creates_callback():
             await event_callback("test_event", {"key": "value"})
 
     run_id = await rm.start_run("test-prompt", coro_factory, event_bus=bus)
-    # Wait for the task to complete
-    await asyncio.sleep(0.1)
+    await _await_run(rm, run_id)
 
     # The factory should have received a non-None callback
     assert received_callback is not None
 
     # The event should have been published to the bus
-    queue, missed = bus.subscribe(run_id)
+    _queue, missed = bus.subscribe(run_id)
     assert len(missed) >= 1
     assert missed[0].type == "test_event"
 
@@ -59,8 +69,8 @@ async def test_start_run_without_event_bus_passes_none_callback():
         nonlocal received_callback
         received_callback = event_callback
 
-    await rm.start_run("test-prompt", coro_factory)
-    await asyncio.sleep(0.1)
+    run_id = await rm.start_run("test-prompt", coro_factory)
+    await _await_run(rm, run_id)
 
     assert received_callback is None
 
@@ -74,15 +84,12 @@ async def test_evolution_complete_emitted_on_error():
         raise RuntimeError("test error")
 
     run_id = await rm.start_run("test-prompt", coro_factory, event_bus=bus)
-    # Wait for the task to complete and callbacks to fire
-    await asyncio.sleep(0.2)
+    queue, _ = bus.subscribe(run_id)
+    event = await asyncio.wait_for(queue.get(), timeout=1)
 
-    queue, missed = bus.subscribe(run_id)
-    # Should have an evolution_complete event
-    evo_complete = [e for e in missed if e.type == "evolution_complete"]
-    assert len(evo_complete) >= 1
-    assert evo_complete[0].data.get("termination_reason") == "error"
-    assert "test error" in evo_complete[0].data.get("error", "")
+    assert event.type == "evolution_complete"
+    assert event.data.get("termination_reason") == "error"
+    assert "test error" in event.data.get("error", "")
 
 
 async def test_evolution_complete_emitted_on_cancel():
@@ -90,20 +97,54 @@ async def test_evolution_complete_emitted_on_cancel():
     rm = RunManager()
     bus = EventBus()
 
+    running = asyncio.Event()
+
     async def coro_factory(event_callback=None):
-        await asyncio.sleep(60)  # Long running to allow cancellation
+        running.set()
+        await asyncio.Event().wait()
 
     run_id = await rm.start_run("test-prompt", coro_factory, event_bus=bus)
-    await asyncio.sleep(0.05)
+    queue, _ = bus.subscribe(run_id)
+    await asyncio.wait_for(running.wait(), timeout=1)
 
     await rm.stop_run(run_id)
-    # Wait for cancellation callback to fire
-    await asyncio.sleep(0.2)
+    event = await asyncio.wait_for(queue.get(), timeout=1)
 
-    queue, missed = bus.subscribe(run_id)
-    evo_complete = [e for e in missed if e.type == "evolution_complete"]
-    assert len(evo_complete) >= 1
-    assert evo_complete[0].data.get("termination_reason") == "cancelled"
+    assert event.type == "evolution_complete"
+    assert event.data.get("termination_reason") == "cancelled"
+
+
+async def test_shutdown_awaits_terminal_event_publication():
+    rm = RunManager()
+    publication_started = asyncio.Event()
+    allow_publication = asyncio.Event()
+    publication_completed = asyncio.Event()
+
+    class BlockingBus:
+        def create_run(self, run_id):
+            pass
+
+        async def publish(self, run_id, event_type, data):
+            publication_started.set()
+            await allow_publication.wait()
+            publication_completed.set()
+
+    async def coro_factory(event_callback=None):
+        raise RuntimeError("broken")
+
+    await rm.start_run("test-prompt", coro_factory, event_bus=BlockingBus())
+    await asyncio.wait_for(publication_started.wait(), timeout=1)
+
+    shutdown = asyncio.create_task(rm.shutdown())
+    checkpoint = asyncio.Event()
+    asyncio.get_running_loop().call_soon(checkpoint.set)
+    await checkpoint.wait()
+    assert not shutdown.done()
+
+    allow_publication.set()
+    await asyncio.wait_for(shutdown, timeout=1)
+    assert publication_completed.is_set()
+    assert not rm._event_tasks
 
 
 async def test_no_duplicate_evolution_complete_on_success():
@@ -123,9 +164,9 @@ async def test_no_duplicate_evolution_complete_on_success():
             )
 
     run_id = await rm.start_run("test-prompt", coro_factory, event_bus=bus)
-    await asyncio.sleep(0.2)
+    await _await_run(rm, run_id)
 
-    queue, missed = bus.subscribe(run_id)
+    _queue, missed = bus.subscribe(run_id)
     evo_complete = [e for e in missed if e.type == "evolution_complete"]
     # Should have exactly 1 evolution_complete (from engine, not from RunManager)
     assert len(evo_complete) == 1
@@ -182,7 +223,7 @@ async def test_error_terminated_run_uses_success_path():
         return FakeResult()
 
     run_id = await rm.start_run("test-prompt", coro_factory, event_bus=bus)
-    await asyncio.sleep(0.2)
+    await _await_run(rm, run_id)
 
     info = rm._runs[run_id]
     # Success path: result is set, error is None
@@ -194,22 +235,290 @@ async def test_error_terminated_run_uses_success_path():
     assert info.task.exception() is None
 
 
-async def test_error_terminated_run_status_shows_completed():
-    """Error-terminated runs show 'completed' status (not 'failed') since the task
-    succeeded -- the error was gracefully handled by IslandEvolver."""
+@pytest.mark.parametrize(
+    ("termination_reason", "expected_status"),
+    [
+        ("generations_complete", "completed"),
+        ("error", "failed"),
+        ("budget_exhausted", "budget_exhausted"),
+        ("cancelled", "cancelled"),
+    ],
+)
+async def test_result_termination_reason_controls_status(
+    termination_reason: str,
+    expected_status: str,
+):
     rm = RunManager()
 
     class FakeResult:
-        termination_reason = "error"
+        pass
 
     async def coro_factory(event_callback=None):
-        return FakeResult()
+        result = FakeResult()
+        result.termination_reason = termination_reason
+        return result
 
     run_id = await rm.start_run("test-prompt", coro_factory)
-    await asyncio.sleep(0.2)
+    await _await_run(rm, run_id)
 
     status = rm.get_status(run_id)
-    assert status["status"] == "completed"
+    assert status["status"] == expected_status
+
+
+@pytest.mark.parametrize(
+    ("termination_reason", "expected_status"),
+    [
+        ("error", "failed"),
+        ("budget_exhausted", "budget_exhausted"),
+        ("cancelled", "cancelled"),
+    ],
+)
+async def test_get_status_reads_completed_task_before_done_callback(
+    termination_reason: str,
+    expected_status: str,
+):
+    async def completed_result():
+        return SimpleNamespace(termination_reason=termination_reason)
+
+    task = asyncio.create_task(completed_result())
+    await task
+    info = RunInfo(
+        run_id="race",
+        prompt_id="test-prompt",
+        task=task,
+        started_at=datetime.now(UTC),
+    )
+    rm = RunManager()
+    rm._runs[info.run_id] = info
+
+    assert rm.get_status(info.run_id)["status"] == expected_status
+    assert info.result is None
+    assert info.termination_reason is None
+
+
+@pytest.mark.parametrize(
+    ("raised", "expected_status", "expected_reason"),
+    [
+        (BudgetExhaustedError("spent"), "budget_exhausted", "budget_exhausted"),
+        (RuntimeError("broken"), "failed", "error"),
+    ],
+)
+async def test_raised_terminal_error_is_statused_and_persisted(
+    monkeypatch,
+    raised: Exception,
+    expected_status: str,
+    expected_reason: str,
+):
+    rm = RunManager()
+    persisted = asyncio.Event()
+    persisted_info = None
+
+    async def persist(info):
+        nonlocal persisted_info
+        persisted_info = info
+        persisted.set()
+
+    monkeypatch.setattr(rm, "_persist_result", persist)
+
+    async def coro_factory(event_callback=None):
+        raise raised
+
+    run_id = await rm.start_run(
+        "test-prompt",
+        coro_factory,
+        config=SimpleNamespace(),
+        evolution_config=SimpleNamespace(),
+    )
+    await asyncio.wait_for(persisted.wait(), timeout=1)
+
+    assert rm.get_status(run_id)["status"] == expected_status
+    assert persisted_info.termination_reason == expected_reason
+    assert persisted_info.result is None
+
+
+async def test_outer_task_cancellation_is_statused_and_persisted(monkeypatch):
+    rm = RunManager()
+    running = asyncio.Event()
+    persisted = asyncio.Event()
+    persisted_info = None
+
+    async def persist(info):
+        nonlocal persisted_info
+        persisted_info = info
+        persisted.set()
+
+    monkeypatch.setattr(rm, "_persist_result", persist)
+
+    async def coro_factory(event_callback=None):
+        running.set()
+        await asyncio.Event().wait()
+
+    run_id = await rm.start_run(
+        "test-prompt",
+        coro_factory,
+        config=SimpleNamespace(),
+        evolution_config=SimpleNamespace(),
+    )
+    await asyncio.wait_for(running.wait(), timeout=1)
+    assert await rm.stop_run(run_id)
+    await asyncio.wait_for(persisted.wait(), timeout=1)
+
+    assert rm.get_status(run_id)["status"] == "cancelled"
+    assert persisted_info.termination_reason == "cancelled"
+    assert persisted_info.result is None
+
+
+async def test_terminal_run_without_persistence_config_stays_in_memory(monkeypatch):
+    rm = RunManager()
+    persisted = asyncio.Event()
+
+    async def persist(info):
+        persisted.set()
+
+    monkeypatch.setattr(rm, "_persist_result", persist)
+
+    async def coro_factory(event_callback=None):
+        raise BudgetExhaustedError("spent")
+
+    run_id = await rm.start_run("test-prompt", coro_factory)
+    await _await_run(rm, run_id)
+
+    assert rm.get_status(run_id)["status"] == "budget_exhausted"
+    assert not persisted.is_set()
+
+
+async def test_shutdown_awaits_pending_persistence(monkeypatch):
+    rm = RunManager()
+    persistence_started = asyncio.Event()
+    allow_persistence = asyncio.Event()
+    persistence_completed = asyncio.Event()
+
+    async def persist(info):
+        persistence_started.set()
+        await allow_persistence.wait()
+        persistence_completed.set()
+
+    monkeypatch.setattr(rm, "_persist_result", persist)
+
+    async def coro_factory(event_callback=None):
+        return SimpleNamespace(termination_reason="generations_complete")
+
+    await rm.start_run(
+        "test-prompt",
+        coro_factory,
+        config=SimpleNamespace(),
+        evolution_config=SimpleNamespace(),
+    )
+    await asyncio.wait_for(persistence_started.wait(), timeout=1)
+
+    shutdown = asyncio.create_task(rm.shutdown())
+    checkpoint = asyncio.Event()
+    asyncio.get_running_loop().call_soon(checkpoint.set)
+    await checkpoint.wait()
+    assert not shutdown.done()
+    allow_persistence.set()
+    await asyncio.wait_for(shutdown, timeout=1)
+
+    assert persistence_completed.is_set()
+    assert not rm._persistence_tasks
+
+
+@pytest.mark.parametrize(
+    ("termination_reason", "error", "expected_status"),
+    [
+        ("error", "broken", "failed"),
+        ("budget_exhausted", "spent", "budget_exhausted"),
+        ("cancelled", "cancelled", "cancelled"),
+    ],
+)
+async def test_persistence_boundary_records_terminal_metadata_without_result(
+    monkeypatch,
+    termination_reason: str,
+    error: str,
+    expected_status: str,
+):
+    records = []
+
+    class FakeEvolutionRun:
+        id = None
+
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+            records.append(self)
+
+    class FakeSession:
+        def add(self, record):
+            pass
+
+        async def commit(self):
+            pass
+
+        async def close(self):
+            pass
+
+    class FakeDatabase:
+        def __init__(self, database_url):
+            self.session = FakeSession()
+
+        async def get_session(self):
+            return self.session
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr("api.storage.database.Database", FakeDatabase)
+    monkeypatch.setattr("api.storage.models.EvolutionRun", FakeEvolutionRun)
+
+    async def completed_task():
+        return None
+
+    task = asyncio.create_task(completed_task())
+    await task
+    generation_config = GenerationConfig(temperature=0.3, max_tokens=987, top_p=0.6)
+    thinking_config = {"meta": {"thinking_budget": 42}}
+    info = RunInfo(
+        run_id="persist-terminal",
+        prompt_id="test-prompt",
+        task=task,
+        started_at=datetime.now(UTC),
+        error=error,
+        termination_reason=termination_reason,
+        config=SimpleNamespace(
+            database_url="fake://",
+            meta_model="meta",
+            target_model="target",
+            judge_model="judge",
+        ),
+        evolution_config=SimpleNamespace(model_dump=lambda: {"generations": 2}),
+        effective_models={
+            "meta_model": "effective-meta",
+            "target_model": "effective-target",
+            "judge_model": "effective-judge",
+        },
+        generation_config=generation_config,
+        thinking_config=thinking_config,
+    )
+
+    await RunManager()._persist_result(info)
+
+    assert len(records) == 1
+    record = records[0]
+    assert record.status == expected_status
+    assert record.extra_metadata == {
+        "termination_reason": termination_reason,
+        "error": error,
+    }
+    assert record.best_fitness_score is None
+    assert record.generations_completed == 0
+    assert record.total_input_tokens == 0
+    assert record.total_output_tokens == 0
+    assert record.total_cost_usd == 0.0
+    assert record.total_api_calls == 0
+    assert record.hyperparameters == {
+        "generations": 2,
+        "inference": generation_config.model_dump(),
+        "thinking": thinking_config,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -221,12 +530,15 @@ async def test_run_manager_basic_operations_still_work():
     """Existing RunManager operations (status, list, stop, shutdown) work with coro_factory pattern."""
     rm = RunManager()
 
+    running = asyncio.Event()
+
     async def coro_factory(event_callback=None):
-        await asyncio.sleep(0.5)
+        running.set()
+        await asyncio.Event().wait()
         return "result"
 
     run_id = await rm.start_run("test-prompt", coro_factory)
-    await asyncio.sleep(0.05)
+    await asyncio.wait_for(running.wait(), timeout=1)
 
     # Check status
     status = rm.get_status(run_id)
@@ -242,7 +554,7 @@ async def test_run_manager_basic_operations_still_work():
     stopped = await rm.stop_run(run_id)
     assert stopped is True
 
-    await asyncio.sleep(0.1)
+    await _await_run(rm, run_id)
     status = rm.get_status(run_id)
     assert status["status"] == "cancelled"
 

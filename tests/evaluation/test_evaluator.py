@@ -4,7 +4,8 @@ Tests the full evaluation pipeline: render -> infer -> score -> aggregate.
 Uses mocked LLM client, scorers, and cost tracker to verify orchestration logic.
 """
 
-from datetime import datetime, timezone
+import asyncio
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -13,12 +14,12 @@ from api.config.models import GenerationConfig
 from api.dataset.models import PriorityTier, TestCase
 from api.evaluation.aggregator import FitnessAggregator
 from api.evaluation.models import CaseResult, EvaluationReport, FitnessScore
-from api.evaluation.renderer import TemplateRenderError, TemplateRenderer
+from api.evaluation.renderer import TemplateRenderer, TemplateRenderError
 from api.evaluation.scorers import BehaviorJudgeScorer, ExactMatchScorer
+from api.exceptions import RetryableError
 from api.gateway.cost import CostTracker
 from api.gateway.litellm_provider import LiteLLMProvider
 from api.types import LLMResponse, ModelRole
-
 
 # -- Fixtures ------------------------------------------------------------------
 
@@ -36,7 +37,7 @@ def _make_llm_response(
         input_tokens=10,
         output_tokens=20,
         cost_usd=0.001,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
 
 
@@ -136,6 +137,38 @@ def gen_config():
     return GenerationConfig(temperature=0.7, max_tokens=4096)
 
 
+@pytest.fixture
+def evaluator(
+    mock_client,
+    mock_renderer,
+    mock_exact_scorer,
+    mock_behavior_scorer,
+    mock_aggregator,
+    mock_cost_tracker,
+):
+    """FitnessEvaluator with the default test doubles."""
+    from api.evaluation.evaluator import FitnessEvaluator
+
+    return FitnessEvaluator(
+        client=mock_client,
+        renderer=mock_renderer,
+        exact_scorer=mock_exact_scorer,
+        behavior_scorer=mock_behavior_scorer,
+        aggregator=mock_aggregator,
+        cost_tracker=mock_cost_tracker,
+        evaluation_concurrency=2,
+    )
+
+
+@pytest.fixture
+def cases():
+    """Stable cases for evaluation-cache tests."""
+    return [
+        _make_test_case(case_id="first", expected_output={"content": "Hello"}),
+        _make_test_case(case_id="second", expected_output={"content": "World"}),
+    ]
+
+
 # -- Tests: Init ---------------------------------------------------------------
 
 
@@ -163,6 +196,28 @@ class TestFitnessEvaluatorInit:
             cost_tracker=mock_cost_tracker,
         )
         assert evaluator is not None
+
+    def test_init_rejects_zero_evaluation_concurrency(
+        self,
+        mock_client,
+        mock_renderer,
+        mock_exact_scorer,
+        mock_behavior_scorer,
+        mock_aggregator,
+        mock_cost_tracker,
+    ):
+        from api.evaluation.evaluator import FitnessEvaluator
+
+        with pytest.raises(ValueError, match="evaluation_concurrency must be at least 1"):
+            FitnessEvaluator(
+                client=mock_client,
+                renderer=mock_renderer,
+                exact_scorer=mock_exact_scorer,
+                behavior_scorer=mock_behavior_scorer,
+                aggregator=mock_aggregator,
+                cost_tracker=mock_cost_tracker,
+                evaluation_concurrency=0,
+            )
 
 
 # -- Tests: Pipeline -----------------------------------------------------------
@@ -514,7 +569,7 @@ class TestFitnessEvaluatorPipeline:
         assert context["purpose"] == "Test customer greeting quality"
 
     @pytest.mark.asyncio
-    async def test_evaluate_tracks_cost(
+    async def test_plain_provider_preserves_direct_cost_tracking(
         self,
         mock_client,
         mock_renderer,
@@ -524,7 +579,7 @@ class TestFitnessEvaluatorPipeline:
         mock_cost_tracker,
         gen_config,
     ):
-        """evaluate() records cost via CostTracker for each inference call."""
+        """A directly constructed evaluator records plain-provider responses."""
         from api.evaluation.evaluator import FitnessEvaluator
 
         evaluator = FitnessEvaluator(
@@ -548,7 +603,6 @@ class TestFitnessEvaluatorPipeline:
             generation_config=gen_config,
         )
 
-        # CostTracker.record should be called once per case
         assert mock_cost_tracker.record.call_count == 2
 
     @pytest.mark.asyncio
@@ -684,6 +738,176 @@ class TestFitnessEvaluatorPipeline:
         mock_aggregator.aggregate.assert_called_once()
         agg_args = mock_aggregator.aggregate.call_args[0][0]
         assert len(agg_args) == 3
+
+
+# -- Tests: Concurrency and cache ---------------------------------------------
+
+
+class TestFitnessEvaluatorConcurrencyAndCache:
+    """Cases overlap within a bound and immutable reports are cached by all inputs."""
+
+    @pytest.mark.asyncio
+    async def test_evaluate_runs_cases_concurrently_but_preserves_order(
+        self, evaluator, monkeypatch
+    ):
+        active = 0
+        peak = 0
+
+        async def fake_case(**kwargs):
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            case = kwargs["case"]
+            await asyncio.sleep({"first": 0.02, "second": 0.01}.get(case.id, 0))
+            active -= 1
+            return CaseResult(case_id=case.id, score=-1, passed=False)
+
+        monkeypatch.setattr(evaluator, "_evaluate_case", fake_case)
+        report = await evaluator.evaluate(
+            template="Prompt",
+            cases=[TestCase(id="first"), TestCase(id="second"), TestCase(id="third")],
+            target_model="model",
+            generation_config=GenerationConfig(),
+        )
+
+        assert peak == 2
+        assert [result.case_id for result in report.case_results] == [
+            "first",
+            "second",
+            "third",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_identical_evaluation_is_cached_as_a_deep_copy(self, evaluator, cases):
+        first = await evaluator.evaluate("Prompt", cases, "model", GenerationConfig())
+        expected = first.model_copy(deep=True)
+        calls = evaluator._client.chat_completion.call_count
+        first.case_results[0].reason = "mutated by caller"
+
+        second = await evaluator.evaluate("Prompt", cases, "model", GenerationConfig())
+
+        assert second == expected
+        assert second is not first
+        assert second.case_results[0] is not first.case_results[0]
+        assert evaluator._client.chat_completion.call_count == calls
+
+    @pytest.mark.asyncio
+    async def test_failed_evaluation_is_not_cached(self, evaluator, cases, monkeypatch):
+        calls = 0
+
+        async def fail_once(**kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RuntimeError("incomplete evaluation")
+            case = kwargs["case"]
+            return CaseResult(case_id=case.id, score=0, passed=True)
+
+        monkeypatch.setattr(evaluator, "_evaluate_case", fail_once)
+        with pytest.raises(RuntimeError, match="incomplete evaluation"):
+            await evaluator.evaluate("Prompt", cases, "model", GenerationConfig())
+
+        report = await evaluator.evaluate("Prompt", cases, "model", GenerationConfig())
+
+        assert report.total_cases == len(cases)
+        assert calls > 1
+
+    @pytest.mark.asyncio
+    async def test_transient_provider_error_is_retried_on_identical_evaluation(
+        self, evaluator, cases
+    ):
+        evaluator._client.chat_completion.side_effect = [
+            RetryableError(429, "try again"),
+            _make_llm_response(),
+        ]
+        case = cases[0]
+
+        first = await evaluator.evaluate("Prompt", [case], "model", GenerationConfig())
+        second = await evaluator.evaluate("Prompt", [case], "model", GenerationConfig())
+
+        assert first.case_results[0].reason.startswith("API error:")
+        assert evaluator._client.chat_completion.call_count == 2
+        assert not second.case_results[0].reason.startswith("API error:")
+
+    @pytest.mark.asyncio
+    async def test_render_error_is_not_cached(self, evaluator):
+        evaluator._renderer.render.side_effect = [TemplateRenderError("missing"), "rendered"]
+        case = _make_test_case(expected_output={"content": "Hello"})
+
+        first = await evaluator.evaluate("Prompt", [case], "model", GenerationConfig())
+        second = await evaluator.evaluate("Prompt", [case], "model", GenerationConfig())
+
+        assert first.case_results[0].reason.startswith("Rendering error:")
+        assert evaluator._renderer.render.call_count == 2
+        assert not second.case_results[0].reason.startswith("Rendering error:")
+
+    @pytest.mark.asyncio
+    async def test_tool_loop_error_is_explicit_and_not_cached(self, evaluator):
+        evaluator._mocks = []
+        tool_response = _make_llm_response(
+            tool_calls=[
+                {
+                    "id": "call-1",
+                    "function": {"name": "lookup", "arguments": "{}"},
+                }
+            ]
+        )
+        evaluator._client.chat_completion.side_effect = [
+            tool_response,
+            RetryableError(503, "tool continuation failed"),
+            _make_llm_response(),
+        ]
+        case = _make_test_case(expected_output={"content": "Hello"})
+
+        first = await evaluator.evaluate("Prompt", [case], "model", GenerationConfig())
+        second = await evaluator.evaluate("Prompt", [case], "model", GenerationConfig())
+
+        assert first.case_results[0].reason.startswith("Tool loop API error:")
+        assert evaluator._behavior_scorer.score.call_count == 1
+        assert evaluator._client.chat_completion.call_count == 3
+        assert not second.case_results[0].reason.startswith("Tool loop API error:")
+
+    @pytest.mark.asyncio
+    async def test_ordinary_scored_failure_is_cached(self, evaluator):
+        evaluator._behavior_scorer.score.return_value = _make_case_result(
+            score=-1, passed=False
+        )
+        case = _make_test_case(expected_output={"content": "Hello"})
+
+        first = await evaluator.evaluate("Prompt", [case], "model", GenerationConfig())
+        calls = evaluator._client.chat_completion.call_count
+        second = await evaluator.evaluate("Prompt", [case], "model", GenerationConfig())
+
+        assert first.case_results[0].passed is False
+        assert second == first
+        assert evaluator._client.chat_completion.call_count == calls
+
+    def test_cache_key_contains_every_evaluation_and_inference_input(self, evaluator, cases):
+        base = {
+            "template": "Prompt",
+            "cases": cases,
+            "target_model": "model",
+            "generation_config": GenerationConfig(),
+            "prompt_tools": [{"type": "function", "function": {"name": "lookup"}}],
+            "purpose": "purpose",
+        }
+        original = evaluator._evaluation_cache_key(**base)
+        changed_cases = [case.model_copy(deep=True) for case in cases]
+        changed_cases[0].description = "cache-relevant metadata"
+        variants = [
+            {**base, "template": "Other"},
+            {**base, "cases": changed_cases},
+            {**base, "cases": list(reversed(cases))},
+            {**base, "target_model": "other-model"},
+            {**base, "generation_config": GenerationConfig(temperature=0.1)},
+            {**base, "prompt_tools": None},
+            {**base, "purpose": "other-purpose"},
+        ]
+
+        assert all(evaluator._evaluation_cache_key(**variant) != original for variant in variants)
+
+        evaluator._extra_inference_kwargs = {"seed": 7}
+        assert evaluator._evaluation_cache_key(**base) != original
 
 
 # -- Tests: Behavior Routing ---------------------------------------------------
@@ -1100,3 +1324,25 @@ class TestCombinedScoring:
         result = report.case_results[0]
         assert "ExactMatch" in result.reason
         assert "Behavior" in result.reason
+
+
+@pytest.mark.asyncio
+async def test_plain_provider_records_initial_and_tool_loop_responses(evaluator, monkeypatch):
+    async def resolve(*_args, **_kwargs):
+        return "tool result"
+
+    monkeypatch.setattr("api.evaluation.evaluator.resolve_tool_call", resolve)
+    evaluator._mocks = []
+    evaluator._client.chat_completion.side_effect = [
+        _make_llm_response(
+            tool_calls=[
+                {"id": "call-1", "function": {"name": "lookup", "arguments": "{}"}}
+            ]
+        ),
+        _make_llm_response(),
+    ]
+    case = _make_test_case(expected_output={"content": "Hello"})
+
+    await evaluator.evaluate("Prompt", [case], "model", GenerationConfig())
+
+    assert evaluator._cost_tracker.record.call_count == 2

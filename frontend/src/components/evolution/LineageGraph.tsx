@@ -5,10 +5,13 @@ import { fitnessColor, REJECTED_OPACITY, ACTIVE_OPACITY, getDotRadius } from '..
 import { traceWinningPath, deduplicateEvents } from '../../lib/lineage-utils'
 import { computePairDiff } from '../../lib/diff-utils'
 import type { DiffLine } from '../../lib/diff-utils'
+import { useTranslation } from 'react-i18next'
 
 interface LineageGraphProps {
   lineageEvents: LineageNode[]
   bestCandidateId: string | null
+  selectedId?: string | null
+  onSelect?: (candidateId: string) => void
 }
 
 interface LayoutNode {
@@ -21,6 +24,7 @@ interface LayoutNode {
   mutationType: string
   isWinning: boolean
   isBest: boolean
+  depth: number
   x: number
   y: number
   radius: number
@@ -53,10 +57,19 @@ function DiffLineRow({ line }: { line: DiffLine }) {
   return <div className="text-muted-foreground"> {line.content}</div>
 }
 
-export default function LineageGraph({ lineageEvents, bestCandidateId }: LineageGraphProps) {
+export default function LineageGraph({
+  lineageEvents,
+  bestCandidateId,
+  selectedId,
+  onSelect,
+}: LineageGraphProps) {
+  const { t } = useTranslation()
   const containerRef = useRef<HTMLDivElement>(null)
+  const nodeRefs = useRef(new Map<string, SVGGElement>())
   const [tooltip, setTooltip] = useState<{ x: number; y: number; node: LayoutNode } | null>(null)
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [internalSelectedId, setInternalSelectedId] = useState<string | null>(null)
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null)
+  const selectedNodeId = selectedId === undefined ? internalSelectedId : selectedId
 
   // Build lineage index for diff computation
   const lineageIndex = useMemo(() => {
@@ -111,13 +124,14 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
       const node: LayoutNode = {
         id: e.candidateId,
         parentIds: e.parentIds,
-        generation: depth,
+        generation: e.generation,
         island: e.island,
         fitnessScore: e.fitnessScore,
         rejected: e.rejected,
         mutationType: e.mutationType,
         isWinning: winning.has(e.candidateId),
         isBest: e.candidateId === bestCandidateId,
+        depth,
         x: 0, y: 0,
         radius: getDotRadius(e.fitnessScore),
       }
@@ -130,7 +144,7 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
 
     for (let di = 0; di < sortedDepths.length; di++) {
       const depth = sortedDepths[di]
-      const depthNodes = nodeArray.filter(n => n.generation === depth)
+      const depthNodes = nodeArray.filter(n => n.depth === depth)
       const y = PADDING_Y + di * ROW_HEIGHT
 
       depthNodes.sort((a, b) => {
@@ -151,21 +165,22 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
       // Use actual generation numbers from lineage data for labels (not computed depth)
       // to stay in sync with the fitness chart which uses generation_records
       if (isSeed) {
-        genLabelsArr.push({ label: 'Seed', y })
+        genLabelsArr.push({ label: t('evolution.seed'), y })
       } else {
         const actualGens = depthNodes.map(n => depedIdx.get(n.id)?.generation ?? 0)
         const maxActualGen = Math.max(...actualGens, 0)
         const genNum = maxActualGen + 1
         // Count how many rows already exist for this generation
-        const existing = genLabelsArr.filter(l => l.label.startsWith(`Gen ${genNum}`))
+        const generationLabel = t('evolution.generationLabel', { generation: genNum })
+        const existing = genLabelsArr.filter(l => l.label.startsWith(generationLabel))
         if (existing.length === 0) {
-          genLabelsArr.push({ label: `Gen ${genNum}`, y })
+          genLabelsArr.push({ label: generationLabel, y })
         } else {
           // Multiple depth levels within same generation: use a/b/c suffix
           if (existing.length === 1 && !existing[0].label.includes('.')) {
-            existing[0].label = `Gen ${genNum}.1`
+            existing[0].label = `${generationLabel}.1`
           }
-          genLabelsArr.push({ label: `Gen ${genNum}.${existing.length + 1}`, y })
+          genLabelsArr.push({ label: `${generationLabel}.${existing.length + 1}`, y })
         }
       }
     }
@@ -194,12 +209,12 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
       svgHeight: Math.max(200, maxY + PADDING_Y),
       genLabels: genLabelsArr,
     }
-  }, [lineageEvents, bestCandidateId])
+  }, [lineageEvents, bestCandidateId, t])
 
   // Compute diff for selected node
   const selectedDiff = useMemo(() => {
-    if (!selectedNodeId) return null
-    const candidate = lineageIndex.get(selectedNodeId)
+    if (selectedId !== undefined || !internalSelectedId) return null
+    const candidate = lineageIndex.get(internalSelectedId)
     if (!candidate || candidate.template === undefined) return null
 
     if (candidate.mutationType === 'seed' || candidate.parentIds.length === 0) {
@@ -215,7 +230,7 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
 
     const pairDiff = computePairDiff(candidate, parent)
     return { type: 'diff' as const, candidate, parent, pairDiff }
-  }, [selectedNodeId, lineageIndex])
+  }, [internalSelectedId, lineageIndex, selectedId])
 
   const handleNodeEnter = useCallback((node: LayoutNode, event: React.MouseEvent) => {
     const container = containerRef.current
@@ -226,9 +241,41 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
 
   const handleNodeLeave = useCallback(() => { setTooltip(null) }, [])
 
-  const handleNodeClick = useCallback((node: LayoutNode) => {
-    setSelectedNodeId(prev => prev === node.id ? null : node.id)
-  }, [])
+  const handleNodeSelect = useCallback((node: LayoutNode) => {
+    setInternalSelectedId(node.id)
+    onSelect?.(node.id)
+  }, [onSelect])
+
+  const childrenByParent = useMemo(() => {
+    const children = new Map<string, string[]>()
+    const knownIds = new Set(nodes.map((node) => node.id))
+    for (const node of nodes) {
+      for (const parentId of node.parentIds) {
+        if (!knownIds.has(parentId)) continue
+        const current = children.get(parentId) ?? []
+        current.push(node.id)
+        children.set(parentId, current)
+      }
+    }
+    return children
+  }, [nodes])
+
+  const handleNodeKeyDown = useCallback((node: LayoutNode, event: React.KeyboardEvent<SVGGElement>) => {
+    if (event.key === 'Enter' || event.key === ' ' || event.key === 'Space' || event.key === 'Spacebar') {
+      event.preventDefault()
+      handleNodeSelect(node)
+      return
+    }
+
+    const targetId = event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+      ? node.parentIds.find((parentId) => nodeRefs.current.has(parentId))
+      : event.key === 'ArrowRight' || event.key === 'ArrowDown'
+        ? childrenByParent.get(node.id)?.[0]
+        : undefined
+    if (!targetId) return
+    event.preventDefault()
+    nodeRefs.current.get(targetId)?.focus()
+  }, [childrenByParent, handleNodeSelect])
 
   const nodePos = useMemo(() => {
     const map = new Map<string, { x: number; y: number }>()
@@ -239,7 +286,7 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
   if (lineageEvents.length === 0) {
     return (
       <div className="rounded-lg border border-border bg-card/50 p-8 text-center text-muted-foreground">
-        No lineage data
+        {t('evolution.noLineageData')}
       </div>
     )
   }
@@ -251,7 +298,7 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
     <div className="rounded-lg border border-border bg-card">
       {/* Header + Legend */}
       <div className="sticky top-0 z-10 flex items-center gap-4 px-4 py-3 border-b border-border bg-card/95 backdrop-blur-sm text-xs text-muted-foreground">
-        <h3 className="text-sm font-semibold text-foreground shrink-0">Evolution Lineage</h3>
+        <h3 className="text-sm font-semibold text-foreground shrink-0">{t('evolution.evolutionLineage')}</h3>
         <span className="text-border">|</span>
         {Object.entries(MUTATION_COLORS).map(([type, color]) => (
           <span key={type} className="inline-flex items-center gap-1.5">
@@ -261,7 +308,7 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
         ))}
         <span className="ml-auto inline-flex items-center gap-1.5">
           <span className="inline-block w-4 h-0.5 bg-score-positive rounded" />
-          winning path
+          {t('evolution.winningPath')}
         </span>
       </div>
 
@@ -325,9 +372,35 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
             const opacity = node.rejected ? REJECTED_OPACITY : ACTIVE_OPACITY
             const r = node.radius
             const isSelected = node.id === selectedNodeId
+            const isFocused = node.id === focusedNodeId
+            const accessibleName = [
+              t('evolution.selectCandidate', { candidate: node.id }),
+              `${t('evolution.generation')} ${node.generation + 1}`,
+              t('evolution.island', { index: node.island + 1 }),
+              `${t('evolution.fullFitness')} ${node.fitnessScore.toFixed(3)}`,
+              node.rejected ? t('evolution.infeasible') : t('evolution.feasible'),
+            ].join(', ')
 
             return (
-              <g key={node.id}>
+              <g
+                key={node.id}
+                ref={(element) => {
+                  if (element) nodeRefs.current.set(node.id, element)
+                  else nodeRefs.current.delete(node.id)
+                }}
+                role="button"
+                tabIndex={0}
+                aria-label={accessibleName}
+                aria-pressed={isSelected}
+                data-focused={isFocused ? 'true' : 'false'}
+                className="cursor-pointer outline-none"
+                onFocus={() => setFocusedNodeId(node.id)}
+                onBlur={() => setFocusedNodeId(null)}
+                onKeyDown={(event) => handleNodeKeyDown(node, event)}
+                onMouseEnter={(event) => handleNodeEnter(node, event)}
+                onMouseLeave={handleNodeLeave}
+                onClick={() => handleNodeSelect(node)}
+              >
                 {node.isWinning && (
                   <circle cx={node.x} cy={node.y} r={r + 5} fill="none" stroke={SCORE_POSITIVE} strokeWidth={2} opacity={0.3} />
                 )}
@@ -337,13 +410,22 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
                 {isSelected && (
                   <circle cx={node.x} cy={node.y} r={r + 6} fill="none" stroke="currentColor" className="text-foreground" strokeWidth={2} opacity={0.8} />
                 )}
+                {isFocused && (
+                  <circle
+                    cx={node.x}
+                    cy={node.y}
+                    r={Math.max(20, r + 9)}
+                    fill="none"
+                    stroke="currentColor"
+                    className="text-foreground"
+                    strokeWidth={3}
+                    strokeDasharray="3 2"
+                  />
+                )}
+                <circle cx={node.x} cy={node.y} r={Math.max(20, r + 8)} fill="transparent" />
                 <circle cx={node.x} cy={node.y} r={r + 2} fill={fitColor} opacity={opacity * 0.25} />
                 <circle cx={node.x} cy={node.y} r={r} fill={color} opacity={opacity}
                   stroke={fitColor} strokeWidth={1.5}
-                  style={{ cursor: 'pointer' }}
-                  onMouseEnter={(e) => handleNodeEnter(node, e)}
-                  onMouseLeave={handleNodeLeave}
-                  onClick={() => handleNodeClick(node)}
                 />
               </g>
             )
@@ -359,11 +441,15 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
               <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: mutationColor(tooltip.node.mutationType) }} />
               <span>{tooltip.node.mutationType}</span>
             </div>
-            <div className="mt-1">Fitness: <span className="font-mono font-semibold">{tooltip.node.fitnessScore.toFixed(3)}</span></div>
-            <div>Gen {tooltip.node.generation} | Island {tooltip.node.island}</div>
-            {tooltip.node.rejected && <div className="text-destructive mt-0.5">Rejected</div>}
-            {tooltip.node.isBest && <div className="text-score-positive font-semibold mt-0.5">Best candidate</div>}
-            <div className="text-muted-foreground mt-1 border-t border-border pt-1">Click to view diff</div>
+            <div className="mt-1">{t('evolution.fitness')}: <span className="font-mono font-semibold">{tooltip.node.fitnessScore.toFixed(3)}</span></div>
+            <div>{t('evolution.candidateContext', {
+              generation: tooltip.node.generation + 1,
+              island: tooltip.node.island + 1,
+              mutation: tooltip.node.mutationType,
+            })}</div>
+            {tooltip.node.rejected && <div className="text-destructive mt-0.5">{t('evolution.infeasible')}</div>}
+            {tooltip.node.isBest && <div className="text-score-positive font-semibold mt-0.5">{t('evolution.bestCandidate')}</div>}
+            <div className="text-muted-foreground mt-1 border-t border-border pt-1">{t('evolution.selectCandidateHint')}</div>
           </div>
         )}
       </div>
@@ -392,9 +478,9 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
                 -{selectedDiff.pairDiff.lines.filter(l => l.type === 'del').length}
               </span>
             )}
-            <button onClick={() => setSelectedNodeId(null)}
-              className="ml-auto text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded hover:bg-accent">
-              Close
+            <button onClick={() => setInternalSelectedId(null)}
+              className="ml-auto min-h-11 rounded px-3 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none">
+              {t('common.close')}
             </button>
           </div>
 
@@ -407,7 +493,7 @@ export default function LineageGraph({ lineageEvents, bestCandidateId }: Lineage
             )}
             {selectedDiff.type === 'clone' && (
               <p className="text-sm text-muted-foreground py-4 text-center">
-                Identical template to parent {selectedDiff.parent.candidateId.slice(0, 8)} (island distribution clone)
+                {t('evolution.identicalParentTemplate', { parent: selectedDiff.parent.candidateId.slice(0, 8) })}
               </p>
             )}
             {selectedDiff.type === 'diff' && (

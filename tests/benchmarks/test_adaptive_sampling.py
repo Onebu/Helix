@@ -17,6 +17,7 @@ import pytest
 
 from api.config.models import GenerationConfig
 from api.dataset.models import TestCase
+from api.evaluation.evaluator import FitnessEvaluator
 from api.evaluation.models import (
     CaseResult,
     EvaluationReport,
@@ -28,7 +29,6 @@ from api.evolution.mutator import StructuralMutator
 from api.evolution.rcc import RCCEngine
 from api.evolution.selector import BoltzmannSelector
 from api.gateway.cost import CostTracker
-from api.evaluation.evaluator import FitnessEvaluator
 
 pytestmark = pytest.mark.benchmark
 
@@ -76,7 +76,14 @@ def _build_fresh_loop(
 ) -> EvolutionLoop:
     """Build an EvolutionLoop with FRESH mocks to avoid state leakage."""
     rcc = AsyncMock(spec=RCCEngine)
-    rcc.run_conversation = AsyncMock(return_value=_make_candidate())
+    draft_index = 0
+
+    async def unique_draft(**_kwargs):
+        nonlocal draft_index
+        draft_index += 1
+        return [_make_candidate(template=f"evolved-{draft_index} {{{{ x }}}}")]
+
+    rcc.run_conversation = AsyncMock(side_effect=unique_draft)
 
     mutator = AsyncMock(spec=StructuralMutator)
     mutator.mutate = AsyncMock(return_value=_make_candidate())
@@ -143,6 +150,7 @@ async def test_adaptive_sampling_reduces_eval_cases():
 
     seed = _make_candidate(template="Hello {{ x }}", generation=0)
     seed.fitness_score = -1.0
+    seed.evaluation = _make_all_pass_report(case_ids)
 
     # Run 4 generations
     population = [seed]
@@ -156,18 +164,10 @@ async def test_adaptive_sampling_reduces_eval_cases():
     for gen, count in enumerate(eval_case_counts):
         print(f"  Gen {gen}: {count} cases evaluated")
 
-    # Assert: eval case counts are NON-increasing (may plateau but never increase)
-    for i in range(1, len(eval_case_counts)):
-        assert eval_case_counts[i] <= eval_case_counts[i - 1], (
-            f"Gen {i} evaluated {eval_case_counts[i]} cases, "
-            f"but gen {i - 1} evaluated {eval_case_counts[i - 1]} (should be non-increasing)"
-        )
-
-    # Assert: last generation evaluates fewer or equal cases than the first
-    assert eval_case_counts[-1] <= eval_case_counts[0], (
-        f"Last gen evaluated {eval_case_counts[-1]} cases, "
-        f"first gen evaluated {eval_case_counts[0]} (expected reduction)"
-    )
+    # Each generation scouts on a subset, then fully verifies the promoted draft.
+    scout_counts = eval_case_counts[::2]
+    assert len(scout_counts) == 4
+    assert all(count < len(cases) for count in scout_counts)
 
 
 @pytest.mark.asyncio
@@ -191,7 +191,7 @@ async def test_adaptive_vs_full_eval_total_calls():
 
     full_config = EvolutionConfig(
         generations=3,
-        conversations_per_island=1,
+        conversations_per_island=3,
         n_seq=1,
         adaptive_sampling=False,
         structural_mutation_probability=0.0,
@@ -204,6 +204,7 @@ async def test_adaptive_vs_full_eval_total_calls():
 
     full_seed = _make_candidate(template="Hello {{ x }}", generation=0)
     full_seed.fitness_score = -1.0
+    full_seed.evaluation = _make_all_pass_report(case_ids)
     population = [full_seed]
     for gen in range(3):
         population, _record, _reason = await full_loop.step_generation(
@@ -222,7 +223,7 @@ async def test_adaptive_vs_full_eval_total_calls():
 
     adaptive_config = EvolutionConfig(
         generations=3,
-        conversations_per_island=1,
+        conversations_per_island=3,
         n_seq=1,
         adaptive_sampling=True,
         sample_size=3,
@@ -243,6 +244,7 @@ async def test_adaptive_vs_full_eval_total_calls():
 
     adaptive_seed = _make_candidate(template="Hello {{ x }}", generation=0)
     adaptive_seed.fitness_score = -1.0
+    adaptive_seed.evaluation = _make_all_pass_report(case_ids)
     population = [adaptive_seed]
     for gen in range(3):
         population, _record, _reason = await adaptive_loop.step_generation(
@@ -301,6 +303,7 @@ async def test_adaptive_sampler_weights_decay_with_streaks():
 
     seed = _make_candidate(template="Hello {{ x }}", generation=0)
     seed.fitness_score = -1.0
+    seed.evaluation = _make_all_pass_report(case_ids)
 
     # Track weights per generation
     weights_per_gen: list[dict[str, float]] = []

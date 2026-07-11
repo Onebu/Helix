@@ -27,6 +27,19 @@ export const initialState: EvolutionState = {
 
 const MAX_CANDIDATES = 500;
 
+function terminalStatus(reason: string): EvolutionState['status'] {
+  switch (reason) {
+    case 'error':
+      return 'failed';
+    case 'cancelled':
+      return 'cancelled';
+    case 'budget_exhausted':
+      return 'budget_exhausted';
+    default:
+      return 'complete';
+  }
+}
+
 export function evolutionReducer(
   state: EvolutionState,
   action: EvolutionAction,
@@ -52,6 +65,10 @@ export function evolutionReducer(
         rejected: action.data.rejected,
         mutationType: action.data.mutation_type,
         island: action.data.island,
+        parentIds: action.data.parent_ids ?? [],
+        template: action.data.template,
+        casesPassed: action.data.cases_passed,
+        totalCases: action.data.total_cases,
       };
       const newCandidates = [...state.candidates, candidate].slice(
         -MAX_CANDIDATES,
@@ -109,7 +126,8 @@ export function evolutionReducer(
     case 'generation_complete': {
       const gen = {
         generation: action.data.generation,
-        label: `Gen ${action.data.generation}`,
+        // Keep reducer state language-neutral; presentation localizes the generation label.
+        label: String(action.data.generation),
         bestFitness: action.data.best_fitness,
         avgFitness: action.data.avg_fitness,
         bestNormalized: action.data.best_normalized,
@@ -145,7 +163,7 @@ export function evolutionReducer(
     case 'evolution_complete':
       return {
         ...state,
-        status: 'complete',
+        status: terminalStatus(action.data.termination_reason),
         summary: {
           ...state.summary,
           bestFitness:
@@ -185,7 +203,7 @@ export function useEvolutionSocket(runId: string | null): EvolutionState {
     const wsBase = getWsBaseUrl();
     const token = getToken();
     const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
-    const ws = new WebSocket(`${wsBase}/ws/evolution/${runId}${tokenParam}`);
+    const ws = new WebSocket(`${wsBase}/ws/evolution/${encodeURIComponent(runId)}${tokenParam}`);
     wsRef.current = ws;
 
     ws.onmessage = (event) => {

@@ -168,6 +168,48 @@ Optional — for cold-start trace import only.
 | `GENE_CONCURRENCY_LIMIT` | Max concurrent LLM calls | `10` |
 | `GENE_PROMPTS_DIR` | Directory for prompt files | `./prompts` |
 
+## Evolution Profiles
+
+Every run selects an `evolution_profile`. Helix evolves prompt templates, whereas the Mind
+Evolution paper evolves task solutions; `paper_reference` restores selected scale and sequential
+evaluation choices but does not claim runtime or experimental parity with the paper.
+
+| Behavior | `cost_controlled` (default) | `paper_reference` |
+|----------|-----------------------------|-------------------|
+| RCC children | 3 revisions, final child evaluated and retained | 4 children, each evaluated and retained |
+| Default 10-generation scale | Roughly 200 final RCC candidates (`10 * 4 * 5`) | Up to 800 evaluated RCC children (`10 * 4 * 5 * 4`) |
+| Parent input | Every selected parent's template and full evaluation evidence | Same real multi-parent evidence |
+| Author attempts (`max_retries`) | 3 | 5 |
+| Population | Capped at 10 candidates per island | Accumulates without a cap |
+| Initialization | Seed plus up to 3 one-round variants distributed across islands | Seed plus 20 sequential evaluated children shared across islands |
+| Reset selection | Direct score-based, feasible-first elites | Meta-model-assisted diverse, feasible-first elites, with fallback |
+
+Candidate counts are scale estimates, not LLM-call or cost guarantees. Early termination,
+deduplication, validation failure, sampling, mutation, retries, initialization, and budget limits
+change actual work.
+
+### Per-run evolution controls
+
+| Field | Cost-controlled default | Paper-reference default | Description |
+|-------|-------------------------|-------------------------|-------------|
+| `evolution_profile` | `cost_controlled` | `paper_reference` | Public profile selector |
+| `generations` | `10` | `10` | Evolution generations |
+| `islands` | `4` | `4` | Parallel island populations |
+| `conversations_per_island` | `5` | `5` | RCC conversations per island and generation |
+| `rcc_rounds` | `3` | `4` | Sequential RCC revisions/children per conversation |
+| `retain_intermediate_children` | `false` | `true` | Evaluate and retain every RCC child |
+| `max_retries` | `3` | `5` | Bounded author attempts per round |
+| `promotions_per_island` | `1` | `1` | Partial scouts promoted to full evaluation per island generation |
+| `population_cap` | `10` | `null` | Maximum candidates per island; `null` means no cap |
+| `budget_cap_usd` | `null` | `null` | Scheduling cap in USD; `null` means no cap |
+
+Explicit non-null profile controls override profile defaults. For `population_cap`, an explicit
+`null` disables the cap. Reset selection is feasible-first; rejected, fully evaluated candidates
+fill remaining reset slots only when too few feasible, fully evaluated candidates exist. The public
+RCC field is `rcc_rounds`. If sampling is enabled, partial results are scouting data only: they
+never enter a population, migrate, become global best, or count as perfect. See
+[Evolution Algorithm](EVOLUTION_ALGORITHM.md) for the full data flow and exact paper comparison.
+
 ## Docker Configuration
 
 ### Production (docker-compose.yml)

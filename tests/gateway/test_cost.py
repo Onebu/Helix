@@ -4,7 +4,8 @@ COST-01: System tracks total LLM API calls, input tokens, output tokens,
 and estimated dollar cost per evolution run.
 """
 
-from datetime import datetime, timezone
+import math
+from datetime import UTC, datetime
 
 import pytest
 
@@ -26,7 +27,7 @@ def _make_response(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         cost_usd=cost_usd,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
 
 
@@ -75,6 +76,21 @@ class TestEstimateCostFromTokens:
         from api.gateway.cost import MODEL_PRICING
 
         assert len(MODEL_PRICING) >= 8
+
+    @pytest.mark.parametrize(
+        ("alias", "canonical"),
+        [
+            ("gpt-4o-mini", "openai/gpt-4o-mini"),
+            ("google/gemini-2.5-flash", "gemini-2.5-flash"),
+            ("gemini-2.0-flash-001", "google/gemini-2.0-flash-001"),
+        ],
+    )
+    def test_common_provider_aliases_have_pricing_parity(self, alias, canonical):
+        from api.gateway.cost import estimate_cost_from_tokens
+
+        assert estimate_cost_from_tokens(alias, 1000, 500) == estimate_cost_from_tokens(
+            canonical, 1000, 500
+        )
 
 
 class TestGeminiDirectPricing:
@@ -187,7 +203,7 @@ class TestCostTracker:
         from api.gateway.cost import CostTracker
 
         tracker = CostTracker()
-        for i in range(100):
+        for _i in range(100):
             tracker.record(_make_response(input_tokens=10, output_tokens=5, cost_usd=0.001))
 
         summary = tracker.summary()
@@ -201,3 +217,124 @@ class TestCostTracker:
         meta_totals = by_role[ModelRole.META]
         assert meta_totals["total_calls"] == 100
         assert meta_totals["total_input_tokens"] == 1000
+
+    def test_budgeted_run_rejects_unknown_model(self):
+        from api.exceptions import ConfigError
+        from api.gateway.cost import CostTracker
+
+        with pytest.raises(ConfigError, match="pricing unavailable"):
+            CostTracker(budget_cap_usd=1).validate_models(["vendor/unknown"])
+
+    def test_unbudgeted_run_allows_unknown_model(self):
+        from api.gateway.cost import CostTracker
+
+        CostTracker().validate_models(["vendor/unknown"])
+
+    @pytest.mark.parametrize("cap", [-0.01, math.nan, math.inf, -math.inf, True, "1"])
+    def test_budget_cap_must_be_finite_nonnegative_number(self, cap):
+        from api.gateway.cost import CostTracker
+
+        with pytest.raises(ValueError, match="budget_cap_usd"):
+            CostTracker(budget_cap_usd=cap)
+
+    def test_budgeted_validation_accepts_priced_alias(self):
+        from api.gateway.cost import CostTracker
+
+        CostTracker(budget_cap_usd=1).validate_models(["gpt-4o-mini"])
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("input_tokens", "output_tokens"),
+        [(0, 1), (-1, 1), (True, 1), (1.5, 1), (1, 0), (1, False), (1, math.nan)],
+    )
+    async def test_reserve_requires_positive_integer_token_counts(
+        self, input_tokens, output_tokens
+    ):
+        from api.gateway.cost import CostTracker
+
+        with pytest.raises(ValueError, match="tokens"):
+            await CostTracker(budget_cap_usd=1).reserve(
+                "openai/gpt-4o-mini", input_tokens, output_tokens
+            )
+
+    @pytest.mark.asyncio
+    async def test_reconcile_releases_reservation_before_rejecting_bad_response(self):
+        from api.gateway.cost import CostTracker
+
+        tracker = CostTracker(budget_cap_usd=1)
+        reservation = await tracker.reserve("openai/gpt-4o-mini", 10, 10)
+        invalid = _make_response().model_copy(update={"cost_usd": math.nan})
+
+        with pytest.raises(ValueError, match="cost_usd"):
+            await tracker.reconcile(reservation, invalid)
+
+        assert tracker._reserved_usd == 0
+        assert tracker.summary()["total_calls"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("reservation", [-1, math.nan, math.inf, True, "0"])
+    async def test_reconcile_rejects_invalid_reservation(self, reservation):
+        from api.gateway.cost import CostTracker
+
+        with pytest.raises(ValueError, match="reservation"):
+            await CostTracker().reconcile(reservation, None)
+
+    @pytest.mark.asyncio
+    async def test_reconcile_cannot_release_more_than_reserved(self):
+        from api.gateway.cost import CostTracker
+
+        tracker = CostTracker()
+        await tracker.reserve("vendor/unknown", 1, 1)
+        with pytest.raises(ValueError, match="exceeds"):
+            await tracker.reconcile(0.01, None)
+        await tracker.reconcile(0, None)
+
+    @pytest.mark.asyncio
+    async def test_reset_rejects_active_reservation(self):
+        from api.gateway.cost import CostTracker
+
+        tracker = CostTracker()
+        reservation = await tracker.reserve("openai/gpt-4o-mini", 10, 10)
+        with pytest.raises(RuntimeError, match="active reservations"):
+            tracker.reset()
+        await tracker.reconcile(reservation, None)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("model", ["gemini-2.0-flash-lite", "vendor/unknown"])
+    async def test_zero_cost_reservation_blocks_reset_until_reconciled(self, model):
+        from api.gateway.cost import CostTracker
+
+        tracker = CostTracker()
+        reservation = await tracker.reserve(model, 10, 10)
+        assert reservation == 0
+        assert tracker._active_reservations == 1
+        with pytest.raises(RuntimeError, match="active reservations"):
+            tracker.reset()
+
+        await tracker.reconcile(reservation, None)
+        assert tracker._active_reservations == 0
+        tracker.reset()
+
+    @pytest.mark.asyncio
+    async def test_multiple_reservations_reconcile_to_exact_zero(self):
+        from api.gateway.cost import CostTracker
+
+        tracker = CostTracker()
+        reservations = [
+            await tracker.reserve("openai/gpt-4o-mini", 11, 13),
+            await tracker.reserve("openai/gpt-4o-mini", 17, 19),
+            await tracker.reserve("vendor/unknown", 1, 1),
+        ]
+        for reservation in reservations:
+            await tracker.reconcile(reservation, None)
+
+        assert tracker._reserved_usd == 0
+        assert tracker._active_reservations == 0
+        tracker.reset()
+
+    @pytest.mark.asyncio
+    async def test_reconcile_requires_an_active_reservation(self):
+        from api.gateway.cost import CostTracker
+
+        with pytest.raises(ValueError, match="no active reservation"):
+            await CostTracker().reconcile(0, None)

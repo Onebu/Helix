@@ -1,10 +1,10 @@
 """Tests for DatasetService: add, list, get, import, delete, summary."""
 
 import json
-from pathlib import Path
 
 import pytest
 import yaml
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
@@ -72,7 +72,7 @@ class TestAddCase:
 
     @pytest.mark.asyncio
     async def test_add_case_stores_in_db(self, service, sample_case):
-        result, warnings = await service.add_case("test-prompt", sample_case)
+        await service.add_case("test-prompt", sample_case)
         # Verify by listing cases
         cases = await service.list_cases("test-prompt")
         assert len(cases) == 1
@@ -106,6 +106,80 @@ class TestAddCase:
         await service.add_case("test-prompt", case2)
         cases = await service.list_cases("test-prompt")
         assert len(cases) == 2
+
+    @pytest.mark.asyncio
+    async def test_source_metadata_round_trips(self, service):
+        case = TestCase(
+            id="source-case",
+            variables={"input": "hello"},
+            source_metadata={"type": "observability", "external_id": "item-1"},
+        )
+
+        await service.add_case("test-prompt", case)
+
+        stored = await service.get_case("test-prompt", case.id)
+        assert stored.source_metadata == case.source_metadata
+
+    @pytest.mark.asyncio
+    async def test_add_cases_returns_warnings_by_case_id(self, service):
+        cases = [
+            TestCase(id="one", variables={"name": "One"}),
+            TestCase(id="two", variables={"name": "Two"}),
+        ]
+
+        created, warnings = await service.add_cases("test-prompt", cases)
+
+        assert created == cases
+        assert warnings == {"one": [], "two": []}
+
+    @pytest.mark.asyncio
+    async def test_add_cases_loads_prompt_schema_once(
+        self, service, session_factory
+    ):
+        engine = session_factory.kw["bind"]
+        prompt_selects: list[str] = []
+
+        def capture_prompt_select(
+            _connection, _cursor, statement, _parameters, _context, _executemany
+        ):
+            if statement.lstrip().upper().startswith("SELECT") and "prompts" in statement:
+                prompt_selects.append(statement)
+
+        event.listen(engine.sync_engine, "before_cursor_execute", capture_prompt_select)
+        try:
+            await service.add_cases(
+                "test-prompt",
+                [TestCase(id="one"), TestCase(id="two"), TestCase(id="three")],
+            )
+        finally:
+            event.remove(
+                engine.sync_engine, "before_cursor_execute", capture_prompt_select
+            )
+
+        assert len(prompt_selects) == 1
+
+    @pytest.mark.asyncio
+    async def test_add_cases_rolls_back_the_whole_batch(
+        self, service, monkeypatch
+    ):
+        original = service._validate_variables
+        calls = 0
+
+        async def fail_second(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise ValueError("invalid second case")
+            return await original(*args, **kwargs)
+
+        monkeypatch.setattr(service, "_validate_variables", fail_second)
+
+        with pytest.raises(ValueError, match="invalid second case"):
+            await service.add_cases(
+                "test-prompt", [TestCase(id="one"), TestCase(id="two")]
+            )
+
+        assert await service.list_cases("test-prompt") == []
 
 
 class TestListCases:
@@ -243,6 +317,30 @@ class TestImportCases:
         assert len(cases) == 1
         assert cases[0].name == "Persisted"
 
+    @pytest.mark.asyncio
+    async def test_import_preserves_source_metadata(self, service, tmp_path):
+        import_file = tmp_path / "import.json"
+        import_file.write_text(
+            json.dumps(
+                [
+                    {
+                        "id": "imported-source",
+                        "source_metadata": {
+                            "type": "observability",
+                            "external_id": "item-1",
+                        },
+                    }
+                ]
+            )
+        )
+
+        imported = await service.import_cases("test-prompt", import_file)
+
+        assert imported[0].source_metadata == {
+            "type": "observability",
+            "external_id": "item-1",
+        }
+
 
 class TestDeleteCase:
     """Tests for DatasetService.delete_case."""
@@ -327,7 +425,7 @@ class TestAddCaseValidation:
         )
         svc = DatasetService(session_factory)
         case = TestCase(name="valid-case", variables={"name": "Alice"})
-        result, warnings = await svc.add_case("schema-prompt", case)
+        _result, warnings = await svc.add_case("schema-prompt", case)
         assert warnings == []
 
     @pytest.mark.asyncio
@@ -346,7 +444,7 @@ class TestAddCaseValidation:
         )
         svc = DatasetService(session_factory)
         case = TestCase(name="type-mismatch", variables={"name": 42})
-        result, warnings = await svc.add_case("type-prompt", case)
+        _result, warnings = await svc.add_case("type-prompt", case)
         assert len(warnings) >= 1
         assert any("string" in w for w in warnings)
         # Case should still be created (warn-but-allow)
@@ -369,7 +467,7 @@ class TestAddCaseValidation:
         )
         svc = DatasetService(session_factory)
         case = TestCase(name="missing-required", variables={})
-        result, warnings = await svc.add_case("required-prompt", case)
+        _result, warnings = await svc.add_case("required-prompt", case)
         assert len(warnings) >= 1
         assert any("required" in w.lower() or "missing" in w.lower() for w in warnings)
         # Case is still created

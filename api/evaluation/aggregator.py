@@ -10,7 +10,7 @@ Implements the penalty-based scoring model per the MindEvolution paper:
 Total fitness = sum of all tier-weighted penalties. 0.0 = perfect.
 """
 
-from api.evaluation.models import CaseResult, FitnessScore
+from api.evaluation.models import CaseResult, EvaluationInvalidError, FitnessScore
 
 
 class FitnessAggregator:
@@ -42,11 +42,13 @@ class FitnessAggregator:
             results: List of per-case evaluation results (scores <= 0).
 
         Returns:
-            FitnessScore with summed tier-weighted penalties and backward-compat
-            rejected flag (set when score < -10).
+            FitnessScore with summed tier-weighted penalties and semantic rejection.
+
+        Raises:
+            EvaluationInvalidError: If no case results were produced.
         """
         if not results:
-            return FitnessScore(score=0.0, normalized_score=0.0, rejected=False, case_results=[])
+            raise EvaluationInvalidError("Evaluation produced no case results")
 
         # Sum all case penalties with tier multipliers, and compute max possible penalty
         total = 0.0
@@ -66,19 +68,33 @@ class FitnessAggregator:
                 multiplier *= 0.5
 
             total += result.score * multiplier
-            # Max penalty per case is -2 * multiplier (standard ExactMatch max penalty)
-            max_possible += -2 * multiplier
+            expected = result.expected or {}
+            raw_behavior = expected.get("behavior", [])
+            behavior_count = 1 if isinstance(raw_behavior, str) else len(raw_behavior or [])
+            exact_count = 1 if expected.get("tool_calls") else 0
+            max_penalty = 2 * (exact_count + behavior_count) or 2
+            max_possible += -max_penalty * multiplier
 
         # Normalize: total / abs(max_possible), clamped to [-1.0, 0.0] range
         normalized = total / abs(max_possible) if max_possible != 0 else 0.0
+        normalized = max(-1.0, min(0.0, normalized))
 
-        # Backward compat: set rejected from score threshold (uses raw total, NOT normalized)
-        rejected = total < -10
+        failed_critical = [
+            result.case_id
+            for result in results
+            if result.tier.lower() == "critical" and not result.passed
+        ]
+        rejected = bool(failed_critical)
+        reason = (
+            f"Critical case failed: {', '.join(failed_critical)}"
+            if failed_critical
+            else None
+        )
 
         return FitnessScore(
             score=total,
             normalized_score=normalized,
             rejected=rejected,
-            rejection_reason=f"Score {total:.1f} below rejection threshold" if rejected else None,
+            rejection_reason=reason,
             case_results=results,
         )

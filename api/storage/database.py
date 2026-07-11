@@ -443,6 +443,7 @@ class Database:
                                     expected_output=case_data.get("expected_output"),
                                     tier=case_data.get("tier", "normal"),
                                     tags=case_data.get("tags", []),
+                                    source_metadata=case_data.get("source_metadata", {}),
                                 )
                                 session.add(case_row)
                             except Exception as exc:

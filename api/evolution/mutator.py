@@ -20,6 +20,7 @@ from jinja2 import TemplateSyntaxError
 from api.evaluation.renderer import TemplateRenderer, TemplateRenderError
 from api.evaluation.validator import TemplateValidator
 from api.evolution.models import Candidate
+from api.evolution.scouting import canonicalize_template
 from api.gateway.cost import CostTracker
 from api.gateway.protocol import LLMProvider
 from api.registry.sections import SectionParser
@@ -122,6 +123,10 @@ class StructuralMutator:
         meta_model: str,
         extra_kwargs: dict | None = None,
     ) -> None:
+        if getattr(client, "owns_cost_accounting", False) is True and getattr(
+            client, "cost_tracker", None
+        ) is not cost_tracker:
+            raise ValueError("Accounting provider and mutator must use the same CostTracker")
         self._client = client
         self._cost_tracker = cost_tracker
         self._validator = validator
@@ -181,14 +186,18 @@ class StructuralMutator:
             **(self._extra_kwargs or {}),
         )
 
-        # Record cost
-        self._cost_tracker.record(response)
+        if getattr(self._client, "owns_cost_accounting", False) is not True:
+            self._cost_tracker.record(response)
 
         # Extract mutated template from response
         mutated_template = self._extract_template(response.content or "")
 
         if not mutated_template or not mutated_template.strip():
             logger.warning("Structural mutation produced empty template, keeping original")
+            return candidate
+
+        if canonicalize_template(mutated_template) == canonicalize_template(candidate.template):
+            logger.warning("Structural mutation left template unchanged, keeping original")
             return candidate
 
         # Validate Jinja2 syntax first -- broken syntax would also cause

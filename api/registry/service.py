@@ -250,9 +250,7 @@ class PromptRegistry:
                     # Merge extra fields (target/judge overrides, etc.)
                     if config_row.extra:
                         overrides.update(config_row.extra)
-                    merged_config = load_prompt_config(
-                        base_config, prompt_dir=None, overrides_dict=overrides
-                    )
+                    merged_config = load_prompt_config(base_config, overrides_dict=overrides)
                 else:
                     merged_config = base_config
 

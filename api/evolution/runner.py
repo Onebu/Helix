@@ -1,10 +1,4 @@
-"""Evolution pipeline runner.
-
-Wires up all service dependencies (evaluator, rcc, mutator, selector,
-cost tracker, island evolver) and executes the evolution.
-
-Extracted from the CLI module for use by the API layer.
-"""
+"""Wire the evolution engine dependencies for API and direct Python callers."""
 
 from __future__ import annotations
 
@@ -35,9 +29,6 @@ async def run_evolution(
 
     Wires up all service dependencies (evaluator, rcc, mutator, selector,
     cost tracker, island evolver) and runs the evolution.
-
-    This function is separated from the CLI command for testability --
-    tests can mock this entire function to avoid wiring real LLM calls.
 
     Creates separate provider instances for each unique provider name
     (meta, target, judge may use different providers like openrouter/gemini).
@@ -72,6 +63,7 @@ async def run_evolution(
     from api.evolution.mutator import StructuralMutator
     from api.evolution.rcc import RCCEngine
     from api.evolution.selector import BoltzmannSelector
+    from api.gateway.budgeted_provider import BudgetedProvider
     from api.gateway.cost import CostTracker
     from api.gateway.factory import create_provider
     from api.lineage.collector import LineageCollector
@@ -84,7 +76,8 @@ async def run_evolution(
     eff_judge_model = judge_model or config.judge_model
     eff_judge_provider = judge_provider or config.judge_provider
 
-    cost_tracker = CostTracker()
+    cost_tracker = CostTracker(budget_cap_usd=evolution_config.budget_cap_usd)
+    cost_tracker.validate_models([eff_meta_model, eff_target_model, eff_judge_model])
     collector = LineageCollector()
 
     # Create one provider per unique provider name
@@ -92,7 +85,8 @@ async def run_evolution(
         providers = {}
         for pname in {eff_meta_provider, eff_target_provider, eff_judge_provider}:
             provider = create_provider(pname, config)
-            providers[pname] = await stack.enter_async_context(provider)
+            entered = await stack.enter_async_context(provider)
+            providers[pname] = BudgetedProvider(entered, cost_tracker)
 
         meta_client = providers[eff_meta_provider]
         target_client = providers[eff_target_provider]
@@ -132,6 +126,7 @@ async def run_evolution(
             aggregator=aggregator,
             cost_tracker=cost_tracker,
             extra_inference_kwargs=_build_thinking_kwargs("target") or None,
+            evaluation_concurrency=min(4, config.concurrency_limit),
         )
 
         validator = TemplateValidator()
@@ -140,6 +135,7 @@ async def run_evolution(
             cost_tracker=cost_tracker,
             validator=validator,
             meta_model=eff_meta_model,
+            max_retries=evolution_config.max_retries,
             extra_kwargs=_build_thinking_kwargs("meta") or None,
         )
         mutator = StructuralMutator(

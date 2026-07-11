@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { getApiBaseUrl } from '@/lib/api-config'
+import { authenticatedFetch } from '@/lib/api-fetch'
 
 export interface ToolCallData {
   id: string
@@ -139,8 +139,8 @@ export function useChatStream(promptId: string) {
       }
 
       try {
-        const response = await fetch(
-          `${getApiBaseUrl()}/api/prompts/${promptId}/chat`,
+        const response = await authenticatedFetch(
+          `/api/prompts/${encodeURIComponent(promptId)}/chat`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -148,16 +148,6 @@ export function useChatStream(promptId: string) {
             signal: controller.signal,
           },
         )
-
-        if (!response.ok) {
-          const errorText = await response.text()
-          setState((prev) => ({
-            ...prev,
-            isStreaming: false,
-            error: `Request failed (${response.status}): ${errorText}`,
-          }))
-          return
-        }
 
         const reader = response.body?.getReader()
         if (!reader) {

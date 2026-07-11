@@ -3,9 +3,6 @@
 Covers requirements: MODEL-01, MODEL-02, MODEL-03
 """
 
-import json
-from pathlib import Path
-
 import pytest
 
 
@@ -164,53 +161,28 @@ class TestGenerationConfig:
 
 
 class TestLoadPromptConfig:
-    """Test 9: load_prompt_config merges per-prompt config.json overrides onto global GeneConfig."""
+    """Test supported config loaders and explicit per-prompt overrides."""
 
-    def test_merges_prompt_config(self, tmp_path: Path):
-        """Per-prompt config.json overrides get merged onto base config."""
+    def test_config_package_exports_only_supported_loaders(self):
+        import api.config as config_package
+
+        assert callable(config_package.load_prompt_config)
+        assert not hasattr(config_package, "load_config")
+
+    def test_load_prompt_config_merges_explicit_overrides(self):
         from api.config.loader import load_prompt_config
-        from api.config.models import GeneConfig
+        from api.config.models import GeneConfig, GenerationConfig
 
         base = GeneConfig(
-            openrouter_api_key="test-key",
-            database_url="postgresql://test@localhost/test",
-            target_model="openai/gpt-4o-mini",
-
+            target_model="base",
+            generation=GenerationConfig(temperature=0.7),
         )
-
-        # Create per-prompt config.json
-        prompt_dir = tmp_path / "my-prompt"
-        prompt_dir.mkdir()
-        config_json = {
-            "target_model": "anthropic/claude-haiku-3.5",
-            "generation": {"temperature": 0.3, "max_tokens": 1024},
-        }
-        (prompt_dir / "config.json").write_text(json.dumps(config_json))
-
-        merged = load_prompt_config(base, prompt_dir)
-        assert merged.target_model == "anthropic/claude-haiku-3.5"
-        assert merged.generation.temperature == 0.3
-        assert merged.generation.max_tokens == 1024
-        # Original values preserved for non-overridden fields
-        assert merged.openrouter_api_key == "test-key"
-        assert merged.meta_model == "anthropic/claude-sonnet-4"
-
-    def test_no_config_json_returns_base(self, tmp_path: Path):
-        """If no config.json exists, return base config unchanged."""
-        from api.config.loader import load_prompt_config
-        from api.config.models import GeneConfig
-
-        base = GeneConfig(
-            openrouter_api_key="test-key",
-            database_url="postgresql://test@localhost/test",
+        merged = load_prompt_config(
+            base,
+            overrides_dict={"target_model": "override", "generation": {"temperature": 0.2}},
         )
-
-        prompt_dir = tmp_path / "no-config-prompt"
-        prompt_dir.mkdir()
-
-        result = load_prompt_config(base, prompt_dir)
-        assert result.target_model == base.target_model
-        assert result.meta_model == base.meta_model
+        assert merged.target_model == "override"
+        assert merged.generation.temperature == 0.2
 
 
 class TestProviderFields:
@@ -275,3 +247,11 @@ class TestConcurrencyLimit:
             concurrency_limit=25,
         )
         assert config.concurrency_limit == 25
+
+    def test_concurrency_limit_rejects_zero(self):
+        from pydantic import ValidationError
+
+        from api.config.models import GeneConfig
+
+        with pytest.raises(ValidationError):
+            GeneConfig(concurrency_limit=0)

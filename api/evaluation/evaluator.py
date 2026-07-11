@@ -6,12 +6,13 @@ render template -> run LLM inference -> score responses -> aggregate fitness.
 This is the primary interface that Phase 3 (evolution engine) will use
 to score candidate prompts.
 
-NOTE: Currently evaluates cases sequentially for simplicity and correctness.
-Concurrent evaluation via asyncio.gather() can be added later -- the
-LiteLLMProvider's semaphore handles API rate limiting.
+Cases are evaluated concurrently with a local bound. The provider's semaphore
+continues to enforce its own API rate limit.
 """
 
 import asyncio
+import hashlib
+import json
 import logging
 from typing import Any
 
@@ -26,10 +27,18 @@ from api.gateway.cost import CostTracker
 from api.gateway.protocol import LLMProvider
 from api.registry.llm_mocker import LLMMocker
 from api.registry.schemas import MockDefinition
-from api.registry.tool_resolver import DEFAULT_MAX_TOOL_STEPS, normalize_tool_call, resolve_tool_call
+from api.registry.tool_resolver import (
+    DEFAULT_MAX_TOOL_STEPS,
+    normalize_tool_call,
+    resolve_tool_call,
+)
 from api.types import ModelRole
 
 logger = logging.getLogger(__name__)
+
+
+class _UncacheableCaseResult(CaseResult):
+    """Internal marker for evaluations that did not reach scoring."""
 
 
 class FitnessEvaluator:
@@ -39,7 +48,7 @@ class FitnessEvaluator:
     1. Render: Inject case variables into the template via TemplateRenderer.
     2. Build messages: [system prompt + chat_history].
     3. Infer: Call LLM via LLMProvider with ModelRole.TARGET.
-    4. Track cost: Record the response via CostTracker.
+    4. Track cost: The injected provider records the response.
     5. Score: Route to ExactMatchScorer (tool_calls) or BehaviorJudgeScorer (behavior).
     6. Annotate: Set case_id and tier on the CaseResult.
 
@@ -75,7 +84,15 @@ class FitnessEvaluator:
         llm_mocker: LLMMocker | None = None,
         format_guides: dict[str, list[str]] | None = None,
         max_tool_steps: int = DEFAULT_MAX_TOOL_STEPS,
+        evaluation_concurrency: int = 4,
     ) -> None:
+        if evaluation_concurrency < 1:
+            raise ValueError("evaluation_concurrency must be at least 1")
+        if getattr(client, "owns_cost_accounting", False) is True and getattr(
+            client, "cost_tracker", None
+        ) is not cost_tracker:
+            raise ValueError("Accounting provider and evaluator must use the same CostTracker")
+
         self._client = client
         self._renderer = renderer
         self._exact_scorer = exact_scorer
@@ -87,6 +104,8 @@ class FitnessEvaluator:
         self._llm_mocker = llm_mocker
         self._format_guides = format_guides or {}
         self._max_tool_steps = max_tool_steps
+        self._evaluation_semaphore = asyncio.Semaphore(evaluation_concurrency)
+        self._report_cache: dict[str, EvaluationReport] = {}
 
     async def evaluate(
         self,
@@ -100,7 +119,7 @@ class FitnessEvaluator:
         """Run the full evaluation pipeline on a candidate prompt.
 
         For each test case: renders the template with case variables,
-        runs LLM inference, scores the response, and tracks cost.
+        runs LLM inference, scores the response, and reports tracked cost.
         After all cases, aggregates scores into a FitnessScore.
 
         Args:
@@ -114,31 +133,67 @@ class FitnessEvaluator:
         Returns:
             EvaluationReport with fitness score, per-case results, and cost summary.
         """
-        case_results: list[CaseResult] = []
+        cache_key = self._evaluation_cache_key(
+            template=template,
+            cases=cases,
+            target_model=target_model,
+            generation_config=generation_config,
+            prompt_tools=prompt_tools,
+            purpose=purpose,
+        )
+        cached = self._report_cache.get(cache_key)
+        if cached is not None:
+            return cached.model_copy(deep=True)
 
-        for i, case in enumerate(cases):
-            result = await self._evaluate_case(
-                template=template,
-                case=case,
-                target_model=target_model,
-                generation_config=generation_config,
-                prompt_tools=prompt_tools,
-                purpose=purpose,
-            )
-            case_results.append(result)
-            # Small delay between cases to avoid provider rate limits
-            if i < len(cases) - 1:
-                await asyncio.sleep(0.3)
+        async def evaluate_bounded(case: TestCase) -> CaseResult:
+            async with self._evaluation_semaphore:
+                return await self._evaluate_case(
+                    template=template,
+                    case=case,
+                    target_model=target_model,
+                    generation_config=generation_config,
+                    prompt_tools=prompt_tools,
+                    purpose=purpose,
+                )
+
+        case_results = list(
+            await asyncio.gather(*(evaluate_bounded(case) for case in cases))
+        )
 
         # Aggregate all case results into a fitness score
         fitness = self._aggregator.aggregate(case_results)
 
-        return EvaluationReport(
+        report = EvaluationReport(
             fitness=fitness,
             case_results=case_results,
             total_cases=len(cases),
             cost_summary=self._cost_tracker.summary(),
         )
+        if all(not isinstance(result, _UncacheableCaseResult) for result in case_results):
+            self._report_cache[cache_key] = report.model_copy(deep=True)
+        return report
+
+    def _evaluation_cache_key(
+        self,
+        template: str,
+        cases: list[TestCase],
+        target_model: str,
+        generation_config: GenerationConfig,
+        prompt_tools: list[dict[str, Any]] | None,
+        purpose: str,
+    ) -> str:
+        """Hash every input that can affect inference or evaluation."""
+        payload = {
+            "template": template,
+            "cases": [case.model_dump(mode="json") for case in cases],
+            "target_model": target_model,
+            "generation_config": generation_config.model_dump(mode="json"),
+            "prompt_tools": prompt_tools,
+            "purpose": purpose,
+            "extra_inference_kwargs": self._extra_inference_kwargs,
+        }
+        canonical = json.dumps(payload, sort_keys=True, default=str)
+        return hashlib.sha256(canonical.encode()).hexdigest()
 
     async def _evaluate_case(
         self,
@@ -164,7 +219,7 @@ class FitnessEvaluator:
             rendered_prompt = self._renderer.render(template, case.variables)
         except TemplateRenderError as exc:
             logger.warning("Rendering failed for case %s: %s", case.id, exc)
-            return CaseResult(
+            return _UncacheableCaseResult(
                 case_id=case.id,
                 tier=case.tier.value,
                 score=-2,
@@ -207,7 +262,7 @@ class FitnessEvaluator:
             response = await self._client.chat_completion(**inference_kwargs)
         except (GatewayError, RetryableError) as exc:
             logger.warning("API error for case %s: %s", case.id, exc)
-            return CaseResult(
+            return _UncacheableCaseResult(
                 case_id=case.id,
                 tier=case.tier.value,
                 score=-2,
@@ -216,8 +271,8 @@ class FitnessEvaluator:
                 synthetic="synthetic" in (case.tags or []),
             )
 
-        # Step 5: Track cost (initial call)
-        self._cost_tracker.record(response)
+        if getattr(self._client, "owns_cost_accounting", False) is not True:
+            self._cost_tracker.record(response)
 
         # Step 5b: Agentic tool loop — execute tool calls via mocks until stop
         if self._mocks is not None or self._llm_mocker is not None:
@@ -251,9 +306,17 @@ class FitnessEvaluator:
                     response = await self._client.chat_completion(**inference_kwargs)
                 except (GatewayError, RetryableError) as exc:
                     logger.warning("API error during tool loop for case %s: %s", case.id, exc)
-                    break
+                    return _UncacheableCaseResult(
+                        case_id=case.id,
+                        tier=case.tier.value,
+                        score=-2,
+                        passed=False,
+                        reason=f"Tool loop API error: {exc}",
+                        synthetic="synthetic" in (case.tags or []),
+                    )
 
-                self._cost_tracker.record(response)
+                if getattr(self._client, "owns_cost_accounting", False) is not True:
+                    self._cost_tracker.record(response)
 
         # Step 6: Score with appropriate scorer (4-way routing)
         expected = case.expected_output or {}

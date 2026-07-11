@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { getApiBaseUrl, getWsBaseUrl } from '@/lib/api-config'
+import { getWsBaseUrl } from '@/lib/api-config'
+import { apiJson } from '@/lib/api-fetch'
 import { getToken } from '@/lib/auth'
 import { UserPlus, Download, Upload, Wrench, Sparkles, X, Check, AlertCircle } from 'lucide-react'
 import { createPortal } from 'react-dom'
@@ -164,14 +165,12 @@ export function SynthesisDialog({ promptId, open, onOpenChange, onComplete }: Sy
   async function fetchPersonas() {
     setPersonaLoading(true)
     try {
-      const apiBase = getApiBaseUrl()
-      const response = await fetch(`${apiBase}/api/prompts/${promptId}/personas`)
-      if (response.ok) {
-        const data = (await response.json()) as Persona[]
-        setPersonas(data)
-        // Select all personas by default
-        setSelectedPersonaIds(new Set(data.map((p) => p.id)))
-      }
+      const data = await apiJson<Persona[]>(
+        `/api/prompts/${encodeURIComponent(promptId)}/personas`,
+      )
+      setPersonas(data)
+      // Select all personas by default
+      setSelectedPersonaIds(new Set(data.map((p) => p.id)))
     } catch {
       // Silently fail -- personas are optional
     } finally {
@@ -253,16 +252,13 @@ export function SynthesisDialog({ promptId, open, onOpenChange, onComplete }: Sy
 
   async function handleAddPersona(persona: Persona) {
     try {
-      const apiBase = getApiBaseUrl()
-      const response = await fetch(`${apiBase}/api/prompts/${promptId}/personas`, {
+      await apiJson(`/api/prompts/${encodeURIComponent(promptId)}/personas`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(persona),
       })
-      if (response.ok) {
-        setShowAddForm(false)
-        await fetchPersonas()
-      }
+      setShowAddForm(false)
+      await fetchPersonas()
     } catch {
       // Silently fail
     }
@@ -270,8 +266,9 @@ export function SynthesisDialog({ promptId, open, onOpenChange, onComplete }: Sy
 
   async function handleEditPersona(persona: Persona) {
     try {
-      const apiBase = getApiBaseUrl()
-      const response = await fetch(`${apiBase}/api/prompts/${promptId}/personas/${persona.id}`, {
+      await apiJson(
+        `/api/prompts/${encodeURIComponent(promptId)}/personas/${encodeURIComponent(persona.id)}`,
+        {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -282,11 +279,10 @@ export function SynthesisDialog({ promptId, open, onOpenChange, onComplete }: Sy
           edge_cases: persona.edge_cases,
           behavior_criteria: persona.behavior_criteria,
         }),
-      })
-      if (response.ok) {
-        setEditingPersonaId(null)
-        await fetchPersonas()
-      }
+        },
+      )
+      setEditingPersonaId(null)
+      await fetchPersonas()
     } catch {
       // Silently fail
     }
@@ -298,14 +294,14 @@ export function SynthesisDialog({ promptId, open, onOpenChange, onComplete }: Sy
       return
     }
     try {
-      const apiBase = getApiBaseUrl()
-      const response = await fetch(`${apiBase}/api/prompts/${promptId}/personas/${id}`, {
+      await apiJson<void>(
+        `/api/prompts/${encodeURIComponent(promptId)}/personas/${encodeURIComponent(id)}`,
+        {
         method: 'DELETE',
-      })
-      if (response.ok) {
-        setDeleteConfirmId(null)
-        await fetchPersonas()
-      }
+        },
+      )
+      setDeleteConfirmId(null)
+      await fetchPersonas()
     } catch {
       // Silently fail
     }
@@ -315,20 +311,16 @@ export function SynthesisDialog({ promptId, open, onOpenChange, onComplete }: Sy
 
   async function handleExport() {
     try {
-      const apiBase = getApiBaseUrl()
-      const response = await fetch(`${apiBase}/api/prompts/${promptId}/personas/export`)
-      if (response.ok) {
-        const data = await response.json()
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `personas-${promptId}.json`
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        URL.revokeObjectURL(url)
-      }
+      const data = await apiJson(`/api/prompts/${encodeURIComponent(promptId)}/personas/export`)
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `personas-${promptId}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
     } catch {
       // Silently fail
     }
@@ -341,15 +333,12 @@ export function SynthesisDialog({ promptId, open, onOpenChange, onComplete }: Sy
     try {
       const text = await file.text()
       const data = JSON.parse(text)
-      const apiBase = getApiBaseUrl()
-      const response = await fetch(`${apiBase}/api/prompts/${promptId}/personas/import`, {
+      await apiJson(`/api/prompts/${encodeURIComponent(promptId)}/personas/import`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       })
-      if (response.ok) {
-        await fetchPersonas()
-      }
+      await fetchPersonas()
     } catch {
       // Silently fail
     }
@@ -366,7 +355,9 @@ export function SynthesisDialog({ promptId, open, onOpenChange, onComplete }: Sy
     const wsBase = getWsBaseUrl()
     const token = getToken()
     const tokenParam = token ? `?token=${encodeURIComponent(token)}` : ''
-    const ws = new WebSocket(`${wsBase}/ws/synthesis/${synthesisRunId}${tokenParam}`)
+    const ws = new WebSocket(
+      `${wsBase}/ws/synthesis/${encodeURIComponent(synthesisRunId)}${tokenParam}`,
+    )
     wsRef.current = ws
 
     ws.onmessage = (event) => {
@@ -466,8 +457,9 @@ export function SynthesisDialog({ promptId, open, onOpenChange, onComplete }: Sy
     const allSelected = selectedPersonaIds.size === personas.length
 
     try {
-      const apiBase = getApiBaseUrl()
-      const response = await fetch(`${apiBase}/api/prompts/${promptId}/synthesize`, {
+      const data = await apiJson<{ run_id: string; total_personas: number }>(
+        `/api/prompts/${encodeURIComponent(promptId)}/synthesize`,
+        {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -476,15 +468,9 @@ export function SynthesisDialog({ promptId, open, onOpenChange, onComplete }: Sy
           max_turns: maxTurns,
           scenario_context: scenarioContext.trim() || undefined,
         }),
-      })
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({ detail: 'Request failed' }))
-        throw new Error(err.detail || `HTTP ${response.status}`)
-      }
-
-      const data = await response.json()
-      const newRunId = data.run_id as string
+        },
+      )
+      const newRunId = data.run_id
       setRunId(newRunId)
       setProgressText(`Synthesis started (${data.total_personas} persona(s))...`)
       connectWebSocket(newRunId)
@@ -561,22 +547,17 @@ export function SynthesisDialog({ promptId, open, onOpenChange, onComplete }: Sy
     }))
 
     try {
-      const apiBase = getApiBaseUrl()
-      const response = await fetch(`${apiBase}/api/prompts/${promptId}/review`, {
+      const data = await apiJson<{ approved: number; rejected: number; case_ids: string[] }>(
+        `/api/prompts/${encodeURIComponent(promptId)}/review`,
+        {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           run_id: runId,
           decisions: decisionList,
         }),
-      })
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({ detail: 'Review submission failed' }))
-        throw new Error(err.detail || `HTTP ${response.status}`)
-      }
-
-      const data = (await response.json()) as { approved: number; rejected: number; case_ids: string[] }
+        },
+      )
       setResult({
         total: reviewConversations.length,
         persisted: data.approved,

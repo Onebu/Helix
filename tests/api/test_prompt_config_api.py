@@ -8,12 +8,15 @@ Covers requirements: CFG-01, CFG-03, CFG-04, DB-01, DB-02
 
 from __future__ import annotations
 
+import asyncio
+from unittest.mock import AsyncMock, patch
+
 import httpx
+from fastapi import FastAPI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.storage.models import PromptConfig
-
 
 # -- Helpers --
 
@@ -31,6 +34,17 @@ async def _register_prompt(
             "id": prompt_id,
             "purpose": purpose,
             "template": template,
+        },
+    )
+
+
+async def _add_case(client: httpx.AsyncClient, prompt_id: str) -> None:
+    await client.post(
+        f"/api/prompts/{prompt_id}/dataset",
+        json={
+            "name": "config test case",
+            "variables": {"name": "world"},
+            "expected_output": {"contains": "Hello"},
         },
     )
 
@@ -277,6 +291,7 @@ class TestSynthesisUsesPromptConfig:
     async def test_synthesis_router_imports_load_prompt_config(self):
         """The synthesis module should reference load_prompt_config."""
         import inspect
+
         from api.web.routers import synthesis
 
         source = inspect.getsource(synthesis._run_synthesis_background)
@@ -285,6 +300,7 @@ class TestSynthesisUsesPromptConfig:
     async def test_synthesis_router_uses_merged_config(self):
         """The synthesis background task should use merged_config, not raw config."""
         import inspect
+
         from api.web.routers import synthesis
 
         source = inspect.getsource(synthesis._run_synthesis_background)
@@ -294,3 +310,138 @@ class TestSynthesisUsesPromptConfig:
         # The pattern "config.meta_provider" should be replaced with "merged_config.meta_provider"
         # We check that "merged_config.meta_provider" appears
         assert "merged_config.meta_provider" in source
+
+
+# -- Evolution router config precedence (CFG-05) --
+
+
+class TestEvolutionUsesPromptConfig:
+    @patch("api.evolution.runner.run_evolution", new_callable=AsyncMock)
+    async def test_prompt_config_is_base_and_request_overrides_win(
+        self,
+        mock_run_evolution: AsyncMock,
+        client: httpx.AsyncClient,
+    ):
+        run_started = asyncio.Event()
+
+        async def run_evolution(*args, **kwargs):
+            run_started.set()
+
+        mock_run_evolution.side_effect = run_evolution
+
+        await _register_prompt(client, "evolution-config")
+        await _add_case(client, "evolution-config")
+        response = await client.put(
+            "/api/prompts/evolution-config/config",
+            json={
+                "meta_model": "prompt-meta",
+                "meta_provider": "gemini",
+                "target_model": "prompt-target",
+                "target_provider": "openai",
+                "judge_model": "prompt-judge",
+                "judge_provider": "gemini",
+                "generation": {
+                    "temperature": 0.2,
+                    "max_tokens": 1234,
+                    "top_p": 0.8,
+                },
+                "meta_thinking_budget": 128,
+                "target_thinking_budget": 256,
+                "judge_thinking_budget": 512,
+            },
+        )
+        assert response.status_code == 200
+
+        response = await client.post(
+            "/api/evolution/start",
+            json={
+                "prompt_id": "evolution-config",
+                "target_model": "request-target",
+                "target_provider": "openrouter",
+                "inference_temperature": 0.6,
+                "meta_thinking_budget": 1024,
+                "target_thinking_level": "low",
+            },
+        )
+        assert response.status_code == 200
+        await asyncio.wait_for(run_started.wait(), timeout=1)
+
+        merged_config = mock_run_evolution.call_args.args[0]
+        assert merged_config.meta_model == "prompt-meta"
+        assert merged_config.meta_provider == "gemini"
+        assert merged_config.target_model == "prompt-target"
+        assert merged_config.target_provider == "openai"
+        assert merged_config.judge_model == "prompt-judge"
+        assert merged_config.judge_provider == "gemini"
+        assert mock_run_evolution.call_args.kwargs | {
+            "meta_model": "prompt-meta",
+            "meta_provider": "gemini",
+            "target_model": "request-target",
+            "target_provider": "openrouter",
+            "judge_model": "prompt-judge",
+            "judge_provider": "gemini",
+        } == mock_run_evolution.call_args.kwargs
+
+        status = response.json()
+        assert status["meta_model"] == "prompt-meta"
+        assert status["meta_provider"] == "gemini"
+        assert status["target_model"] == "request-target"
+        assert status["target_provider"] == "openrouter"
+        assert status["judge_model"] == "prompt-judge"
+        assert status["judge_provider"] == "gemini"
+
+        generation_config = mock_run_evolution.call_args.kwargs["generation_config"]
+        assert generation_config.temperature == 0.6
+        assert generation_config.max_tokens == 1234
+        assert generation_config.top_p == 0.8
+
+        thinking_config = mock_run_evolution.call_args.kwargs["thinking_config"]
+        assert thinking_config == {
+            "meta": {"thinking_budget": 1024},
+            "target": {"thinking_level": "low"},
+            "judge": {"thinking_budget": 512},
+        }
+
+    @patch("api.evolution.runner.run_evolution", new_callable=AsyncMock)
+    async def test_runner_and_persistence_share_effective_config_objects(
+        self,
+        mock_run_evolution: AsyncMock,
+        client: httpx.AsyncClient,
+        app: FastAPI,
+    ):
+        run_started = asyncio.Event()
+
+        async def run_evolution(*args, **kwargs):
+            run_started.set()
+
+        mock_run_evolution.side_effect = run_evolution
+        await _register_prompt(client, "effective-objects")
+        await _add_case(client, "effective-objects")
+        await client.put(
+            "/api/prompts/effective-objects/config",
+            json={
+                "generation": {"temperature": 0.25, "max_tokens": 777},
+                "target_thinking_budget": 333,
+            },
+        )
+
+        response = await client.post(
+            "/api/evolution/start",
+            json={"prompt_id": "effective-objects", "top_p": 0.75},
+        )
+        await asyncio.wait_for(run_started.wait(), timeout=1)
+
+        info = app.state.run_manager._runs[response.json()["run_id"]]
+        runner_generation = mock_run_evolution.call_args.kwargs["generation_config"]
+        runner_thinking = mock_run_evolution.call_args.kwargs["thinking_config"]
+        assert info.generation_config is runner_generation
+        assert info.thinking_config is runner_thinking
+        assert runner_generation.model_dump() == {
+            "temperature": 0.25,
+            "max_tokens": 777,
+            "top_p": 0.75,
+            "top_k": None,
+            "frequency_penalty": None,
+            "presence_penalty": None,
+        }
+        assert runner_thinking == {"target": {"thinking_budget": 333}}

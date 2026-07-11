@@ -26,9 +26,9 @@ from api.evolution.loop import EvolutionLoop
 from api.evolution.models import Candidate, EvolutionConfig
 from api.evolution.mutator import StructuralMutator
 from api.evolution.rcc import RCCEngine
+from api.evolution.scouting import canonicalize_template, is_full_report
 from api.evolution.selector import BoltzmannSelector
 from api.gateway.cost import CostTracker
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -67,9 +67,42 @@ def _make_report_with_results(score: float, case_results: list[CaseResult]) -> E
     )
 
 
+def _report_for_requested_cases(score: float):
+    def evaluate(**kwargs) -> EvaluationReport:
+        return _make_report_with_results(
+            score,
+            [
+                CaseResult(case_id=case.id, score=score, passed=score == 0.0)
+                for case in kwargs["cases"]
+            ],
+        )
+
+    return evaluate
+
+
 def _make_candidate(template: str = "evolved {{ x }}", generation: int = 0) -> Candidate:
     """Create a Candidate with a test template."""
     return Candidate(template=template, generation=generation, parent_ids=[])
+
+
+def _make_population_candidate(
+    template: str,
+    cases: list[TestCase],
+    score: float = -1.0,
+) -> Candidate:
+    candidate = _make_candidate(template)
+    report = _make_report_with_results(
+        score,
+        [
+            CaseResult(case_id=case.id, score=score, passed=score == 0.0)
+            for case in cases
+        ],
+    )
+    candidate.fitness_score = report.fitness.score
+    candidate.normalized_score = report.fitness.normalized_score
+    candidate.rejected = report.fitness.rejected
+    candidate.evaluation = report
+    return candidate
 
 
 def _make_cases(n: int) -> list[TestCase]:
@@ -93,12 +126,19 @@ def _build_loop_with_cases(
     """Build an EvolutionLoop with configurable cases for sampling tests."""
     if evaluator is None:
         evaluator = AsyncMock(spec=FitnessEvaluator)
-        evaluator.evaluate = AsyncMock(return_value=_make_report(0.5))
+        evaluator.evaluate = AsyncMock(side_effect=_report_for_requested_cases(-1.0))
     if cases is None:
         cases = _make_cases(5)
 
     rcc = AsyncMock(spec=RCCEngine)
-    rcc.run_conversation = AsyncMock(return_value=_make_candidate())
+    draft_index = 0
+
+    async def unique_draft(**_kwargs):
+        nonlocal draft_index
+        draft_index += 1
+        return [_make_candidate(template=f"evolved-{draft_index} {{{{ x }}}}")]
+
+    rcc.run_conversation = AsyncMock(side_effect=unique_draft)
 
     mutator = AsyncMock(spec=StructuralMutator)
     mutator.mutate = AsyncMock(return_value=_make_candidate())
@@ -124,6 +164,32 @@ def _build_loop_with_cases(
 # ---------------------------------------------------------------------------
 
 
+def test_canonicalize_template_normalizes_outer_and_trailing_whitespace():
+    assert canonicalize_template("\n  Same  \nline\t \n\n") == "Same\nline"
+
+
+def test_is_full_report_requires_exact_case_id_coverage():
+    duplicate_report = _make_report_with_results(
+        -1.0,
+        [
+            CaseResult(case_id="first", score=0.0, passed=True),
+            CaseResult(case_id="first", score=-1.0, passed=False),
+        ],
+    )
+    exact_report = _make_report_with_results(
+        -1.0,
+        [
+            CaseResult(case_id="first", score=0.0, passed=True),
+            CaseResult(case_id="second", score=-1.0, passed=False),
+        ],
+    )
+    inconsistent_total = exact_report.model_copy(update={"total_cases": 3})
+
+    assert not is_full_report(duplicate_report, {"first", "second"})
+    assert not is_full_report(inconsistent_total, {"first", "second"})
+    assert is_full_report(exact_report, {"first", "second"})
+
+
 @pytest.mark.asyncio
 async def test_step_generation_with_sampling_uses_subset():
     """step_generation with sample_size=2 calls evaluator.evaluate with fewer cases than total."""
@@ -131,14 +197,14 @@ async def test_step_generation_with_sampling_uses_subset():
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
         sample_size=2,
     )
 
     evaluator = AsyncMock(spec=FitnessEvaluator)
-    evaluator.evaluate = AsyncMock(return_value=_make_report(0.5))
+    evaluator.evaluate = AsyncMock(side_effect=_report_for_requested_cases(-1.0))
 
     loop = _build_loop_with_cases(config=config, evaluator=evaluator, cases=cases)
 
@@ -146,13 +212,13 @@ async def test_step_generation_with_sampling_uses_subset():
     seed_results = [CaseResult(case_id=f"case-{i}", score=0.8, passed=True) for i in range(10)]
     loop.set_seed_results(seed_results)
 
-    seed = _make_candidate(template="Hello {{ x }}", generation=0)
-    seed.fitness_score = 0.5
+    seed = _make_population_candidate("Hello {{ x }}", cases, score=0.0)
 
     await loop.step_generation(population=[seed], generation=1)
 
     # The evaluate call should use fewer cases than total
-    call_kwargs = evaluator.evaluate.call_args.kwargs
+    assert evaluator.evaluate.call_count == 2
+    call_kwargs = evaluator.evaluate.call_args_list[0].kwargs
     eval_cases = call_kwargs["cases"]
     assert len(eval_cases) < len(cases), (
         f"Expected subset but got {len(eval_cases)} cases (total={len(cases)})"
@@ -166,18 +232,17 @@ async def test_step_generation_without_sampling_uses_all_cases():
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
     )
 
     evaluator = AsyncMock(spec=FitnessEvaluator)
-    evaluator.evaluate = AsyncMock(return_value=_make_report(0.5))
+    evaluator.evaluate = AsyncMock(side_effect=_report_for_requested_cases(-1.0))
 
     loop = _build_loop_with_cases(config=config, evaluator=evaluator, cases=cases)
 
-    seed = _make_candidate(template="Hello {{ x }}", generation=0)
-    seed.fitness_score = 0.5
+    seed = _make_population_candidate("Hello {{ x }}", cases)
 
     await loop.step_generation(population=[seed], generation=0)
 
@@ -194,7 +259,7 @@ async def test_seed_evaluation_uses_all_cases_even_with_sampling():
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
         sample_size=2,
@@ -225,27 +290,25 @@ async def test_seed_evaluation_uses_all_cases_even_with_sampling():
 
 
 @pytest.mark.asyncio
-async def test_set_seed_results_enables_sampling():
-    """set_seed_results() allows external injection of seed results for sampling."""
+async def test_full_population_evidence_enables_sampling():
+    """A passing full-suite elite supplies the evidence used for sampling."""
     cases = _make_cases(10)
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
         sample_size=2,
     )
 
     evaluator = AsyncMock(spec=FitnessEvaluator)
-    evaluator.evaluate = AsyncMock(return_value=_make_report(0.5))
+    evaluator.evaluate = AsyncMock(side_effect=_report_for_requested_cases(-1.0))
 
     loop = _build_loop_with_cases(config=config, evaluator=evaluator, cases=cases)
 
-    # Before setting seed results, sampling should not be active
-    # (seed_results is None, so all cases are used)
-    seed = _make_candidate(template="Hello {{ x }}", generation=0)
-    seed.fitness_score = 0.5
+    # A failing elite forces every previously failing case into the scout set.
+    seed = _make_population_candidate("Hello {{ x }}", cases)
     await loop.step_generation(population=[seed], generation=0)
 
     first_call_cases = evaluator.evaluate.call_args.kwargs["cases"]
@@ -253,13 +316,11 @@ async def test_set_seed_results_enables_sampling():
 
     evaluator.evaluate.reset_mock()
 
-    # After setting seed results, sampling should be active
-    seed_results = [CaseResult(case_id=f"case-{i}", score=0.8, passed=True) for i in range(10)]
-    loop.set_seed_results(seed_results)
+    # A fully verified passing elite permits a true subset scout.
+    passing_seed = _make_population_candidate("Passing {{ x }}", cases, score=0.0)
+    await loop.step_generation(population=[passing_seed], generation=1)
 
-    await loop.step_generation(population=[seed], generation=1)
-
-    second_call_cases = evaluator.evaluate.call_args.kwargs["cases"]
+    second_call_cases = evaluator.evaluate.call_args_list[0].kwargs["cases"]
     assert len(second_call_cases) < 10  # subset
 
 
@@ -275,7 +336,7 @@ async def test_checkpoint_full_evaluation():
     config = EvolutionConfig(
         generations=3,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
         sample_size=2,
@@ -304,12 +365,11 @@ async def test_checkpoint_full_evaluation():
     seed_results = [CaseResult(case_id=f"case-{i}", score=0.8, passed=True) for i in range(10)]
     loop.set_seed_results(seed_results)
 
-    seed = _make_candidate(template="Hello {{ x }}", generation=0)
-    seed.fitness_score = -1.0
+    seed = _make_population_candidate("Hello {{ x }}", cases, score=0.0)
 
     # gen=0: not a checkpoint (0 > 0 is false), uses smart_subset
     await loop.step_generation(population=[seed], generation=0)
-    gen0_cases = eval_case_counts[-1]
+    gen0_cases = eval_case_counts[0]
 
     eval_case_counts.clear()
 
@@ -327,7 +387,7 @@ async def test_adaptive_sampling_config_false_unchanged():
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
     )
@@ -343,7 +403,7 @@ async def test_adaptive_sampler_streak_reset_on_checkpoint_failure():
     config = EvolutionConfig(
         generations=3,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
         sample_size=1,
@@ -369,15 +429,20 @@ async def test_adaptive_sampler_streak_reset_on_checkpoint_failure():
     evaluator = AsyncMock(spec=FitnessEvaluator)
     # Gens 0, 1 return all pass; gen 2 (checkpoint) returns case-1 failure
     evaluator.evaluate = AsyncMock(
-        side_effect=[all_pass_report, all_pass_report, checkpoint_report]
+        side_effect=[
+            all_pass_report,
+            all_pass_report,
+            all_pass_report,
+            all_pass_report,
+            checkpoint_report,
+        ]
     )
 
     loop = _build_loop_with_cases(config=config, evaluator=evaluator, cases=cases)
     seed_results = [CaseResult(case_id=f"case-{i}", score=0.8, passed=True) for i in range(3)]
     loop.set_seed_results(seed_results)
 
-    seed = _make_candidate(template="Hello {{ x }}", generation=0)
-    seed.fitness_score = -1.0
+    seed = _make_population_candidate("Hello {{ x }}", cases, score=0.0)
 
     # Run gen 0 and 1 to build streaks
     await loop.step_generation(population=[seed], generation=0)
@@ -403,7 +468,7 @@ async def test_adaptive_weights_passed_to_smart_subset():
     config = EvolutionConfig(
         generations=1,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         structural_mutation_probability=0.0,
         pr_no_parents=0.0,
         sample_size=2,
@@ -422,8 +487,7 @@ async def test_adaptive_weights_passed_to_smart_subset():
     seed_results = [CaseResult(case_id=f"case-{i}", score=0.8, passed=True) for i in range(5)]
     loop.set_seed_results(seed_results)
 
-    seed = _make_candidate(template="Hello {{ x }}", generation=0)
-    seed.fitness_score = -1.0
+    seed = _make_population_candidate("Hello {{ x }}", cases)
 
     with patch(
         "api.evolution.loop.SamplingStrategy.smart_subset",
@@ -439,3 +503,122 @@ async def test_adaptive_weights_passed_to_smart_subset():
         assert isinstance(aw, dict)
         # All weights should be floats
         assert all(isinstance(v, float) for v in aw.values())
+
+
+@pytest.mark.asyncio
+async def test_partial_scout_cannot_trigger_perfect_or_enter_population():
+    cases = [
+        TestCase(id="critical", tier="critical"),
+        TestCase(id="hidden"),
+    ]
+    evaluator = AsyncMock(spec=FitnessEvaluator)
+    evaluator.evaluate.side_effect = [
+        _make_report_with_results(
+            0.0,
+            [CaseResult(case_id="critical", score=0.0, passed=True)],
+        ),
+        _make_report_with_results(
+            -2.0,
+            [
+                CaseResult(case_id="critical", score=0.0, passed=True),
+                CaseResult(case_id="hidden", score=-2.0, passed=False),
+            ],
+        ),
+    ]
+    loop = _build_loop_with_cases(
+        EvolutionConfig(
+            sample_size=1,
+            conversations_per_island=1,
+            structural_mutation_probability=0.0,
+        ),
+        evaluator=evaluator,
+        cases=cases,
+    )
+
+    population, _, reason = await loop.step_generation(
+        [_make_population_candidate("Seed {{ x }}", cases)],
+        0,
+    )
+
+    assert reason is None
+    assert evaluator.evaluate.call_count == 2
+    assert all(
+        candidate.evaluation is not None and candidate.evaluation.total_cases == 2
+        for candidate in population
+    )
+
+
+@pytest.mark.asyncio
+async def test_duplicate_templates_are_evaluated_once():
+    cases = [TestCase(id="c1")]
+    loop = _build_loop_with_cases(
+        EvolutionConfig(
+            conversations_per_island=2,
+            structural_mutation_probability=0.0,
+        ),
+        cases=cases,
+    )
+    loop._rcc.run_conversation.return_value = [Candidate(template="Same {{ x }}")]
+    loop._rcc.run_conversation.side_effect = None
+
+    await loop.step_generation([_make_population_candidate("Seed {{ x }}", cases)], 0)
+
+    assert loop._evaluator.evaluate.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_scouts_share_subset_and_promote_feasible_first():
+    cases = [
+        TestCase(id="critical", tier="critical"),
+        TestCase(id="passing-1"),
+        TestCase(id="passing-2"),
+    ]
+    evaluator = AsyncMock(spec=FitnessEvaluator)
+    rejected_scout = _make_report_with_results(
+        0.0,
+        [CaseResult(case_id="critical", score=-1.0, passed=False)],
+    )
+    rejected_scout.fitness.rejected = True
+    feasible_scout = _make_report_with_results(
+        -1.0,
+        [CaseResult(case_id="critical", score=0.0, passed=True)],
+    )
+    full_report = _make_report_with_results(
+        -2.0,
+        [
+            CaseResult(case_id="critical", score=0.0, passed=True),
+            CaseResult(case_id="passing-1", score=-1.0, passed=False),
+            CaseResult(case_id="passing-2", score=-1.0, passed=False),
+        ],
+    )
+    evaluator.evaluate.side_effect = [rejected_scout, feasible_scout, full_report]
+    loop = _build_loop_with_cases(
+        EvolutionConfig(
+            conversations_per_island=2,
+            sample_size=1,
+            promotions_per_island=1,
+            structural_mutation_probability=0.0,
+        ),
+        evaluator=evaluator,
+        cases=cases,
+    )
+    loop._rcc.run_conversation.side_effect = [
+        [Candidate(template="Rejected {{ x }}")],
+        [Candidate(template="Feasible {{ x }}")],
+    ]
+    loop.set_seed_results(
+        [CaseResult(case_id=case.id, score=0.0, passed=True) for case in cases]
+    )
+
+    population, _, _ = await loop.step_generation(
+        [_make_population_candidate("Seed {{ x }}", cases)],
+        0,
+    )
+
+    scout_case_ids = [
+        [case.id for case in call.kwargs["cases"]]
+        for call in evaluator.evaluate.call_args_list[:2]
+    ]
+    assert scout_case_ids[0] == scout_case_ids[1]
+    assert evaluator.evaluate.call_args_list[2].kwargs["template"] == "Feasible {{ x }}"
+    assert all(candidate.template != "Rejected {{ x }}" for candidate in population)

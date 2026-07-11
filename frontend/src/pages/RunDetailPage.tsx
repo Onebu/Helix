@@ -15,8 +15,8 @@ export default function RunDetailPage() {
   return (
     <div>
       <Suspense fallback={
-        <div className="flex items-center justify-center py-20">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
+        <div className="flex items-center justify-center py-20" role="status" aria-label={t('common.loading')}>
+          <div aria-hidden="true" className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-primary motion-reduce:animate-none" />
         </div>
       }>
         <EvolutionDashboard runId={runId} />

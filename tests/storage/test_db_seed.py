@@ -15,10 +15,12 @@ import yaml
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.dataset.service import DatasetService
 from api.storage.database import Database
 from api.storage.models import (
     Persona,
     PromptConfig,
+    TestCaseRecord,
 )
 
 
@@ -105,6 +107,59 @@ class TestEnsureColumnsAllTables:
 
         # ensure_columns should run without error on existing tables
         await db.ensure_columns()
+
+    async def test_new_json_column_loads_as_empty_dict_for_legacy_rows(self, tmp_path):
+        database = Database(f"sqlite+aiosqlite:///{tmp_path / 'legacy.db'}")
+        try:
+            async with database.engine.begin() as conn:
+                await conn.execute(
+                    text(
+                        """
+                        CREATE TABLE test_cases (
+                            id VARCHAR(255) PRIMARY KEY,
+                            prompt_id VARCHAR(255) NOT NULL,
+                            name VARCHAR(500),
+                            description TEXT,
+                            chat_history JSON NOT NULL,
+                            variables JSON NOT NULL,
+                            tools JSON,
+                            expected_output JSON,
+                            tier VARCHAR(20) NOT NULL,
+                            tags JSON NOT NULL,
+                            created_at DATETIME
+                        )
+                        """
+                    )
+                )
+                await conn.execute(
+                    text(
+                        """
+                        INSERT INTO test_cases (
+                            id, prompt_id, chat_history, variables, tier, tags, created_at
+                        ) VALUES (
+                            'legacy-case', 'legacy-prompt', '[]', '{}', 'normal', '[]',
+                            CURRENT_TIMESTAMP
+                        )
+                        """
+                    )
+                )
+
+            await database.ensure_columns()
+
+            async with database.session_factory() as session:
+                raw_metadata = await session.scalar(
+                    select(TestCaseRecord.source_metadata).where(
+                        TestCaseRecord.id == "legacy-case"
+                    )
+                )
+            assert raw_metadata is None
+
+            cases = await DatasetService(database.session_factory).list_cases(
+                "legacy-prompt"
+            )
+            assert cases[0].source_metadata == {}
+        finally:
+            await database.close()
 
 
 class TestImportPromptSidecars:

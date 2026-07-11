@@ -22,3 +22,15 @@ Object.defineProperty(window, 'matchMedia', {
   unobserve() {}
   disconnect() {}
 }
+
+// jsdom does not implement pointer capture, which Radix Select uses to
+// distinguish a click from a drag before opening its options.
+if (!HTMLElement.prototype.hasPointerCapture) {
+  HTMLElement.prototype.hasPointerCapture = () => false
+  HTMLElement.prototype.setPointerCapture = () => {}
+  HTMLElement.prototype.releasePointerCapture = () => {}
+}
+
+if (!HTMLElement.prototype.scrollIntoView) {
+  HTMLElement.prototype.scrollIntoView = () => {}
+}

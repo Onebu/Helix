@@ -18,6 +18,8 @@ A core design principle is **non-regression**: new improvements must never break
 
 Helix includes a web dashboard for configuration, real-time monitoring during evolution runs, and post-run analysis (phylogenetic trees, prompt diffs, mutation effectiveness statistics).
 
+Helix provides a FastAPI service, a React dashboard, and an importable Python evolution engine.
+
 ## Key Features
 
 - Island-model parallel evolution with cyclic migration and stagnation resets
@@ -31,7 +33,6 @@ Helix includes a web dashboard for configuration, real-time monitoring during ev
 - Interactive lineage graph with click-to-diff
 - Multi-language UI (English, Chinese, Spanish)
 - Docker Compose for single-command deployment
-- **Standalone CLI** (`helix-evolve`) for terminal-based evolution with YAML project files
 
 ## Screenshots
 
@@ -102,29 +103,63 @@ docker compose up --build
 
 This launches the backend, frontend (via nginx on port 80), and a SQLite database. Open [http://localhost](http://localhost) to access the dashboard.
 
-### Alternative: CLI Only
+### Alternative: Direct Python
 
-For terminal-based usage without the web UI:
+The evolution engine can also be called directly. This example uses the default OpenRouter
+provider for all three roles and requires `GENE_OPENROUTER_API_KEY` in `.env`.
 
-```bash
-uv pip install -e .          # core engine
-uv pip install -e cli/       # CLI tool
+```python
+import asyncio
+from datetime import UTC, datetime
 
-helix init my-prompt         # scaffold a prompt project
-# edit YAML files...
-helix evolve my-prompt       # run evolution
-helix results my-prompt      # view results
-helix accept my-prompt       # apply evolved template
+from dotenv import load_dotenv
+
+from api.config.models import GeneConfig
+from api.dataset.models import TestCase
+from api.evolution.models import EvolutionConfig
+from api.evolution.runner import run_evolution
+from api.registry.models import PromptRecord
+
+load_dotenv()
+
+prompt = PromptRecord(
+    id="support-agent",
+    purpose="Answer support questions clearly",
+    template="You are a concise support agent.",
+    template_variables=set(),
+    anchor_variables=set(),
+    created_at=datetime.now(UTC),
+)
+cases = [
+    TestCase(
+        chat_history=[{"role": "user", "content": "How do I reset my password?"}],
+        expected_output={"behavior": ["Gives clear password-reset instructions"]},
+    )
+]
+
+result = asyncio.run(
+    run_evolution(
+        config=GeneConfig(),
+        prompt_record=prompt,
+        cases=cases,
+        evolution_config=EvolutionConfig(
+            generations=1,
+            n_islands=1,
+            conversations_per_island=1,
+            rcc_rounds=1,
+            n_parents=1,
+        ),
+    )
+)
+print(result.best_candidate.template)
 ```
-
-All commands support `--json` for AI agent integration. See the full [CLI documentation](cli/README.md).
 
 ## Architecture Overview
 
 ```
 api/
   web/            FastAPI REST + WebSocket endpoints
-  config/         YAML + env config loading (Pydantic Settings)
+  config/         Pydantic settings + explicit prompt overrides
   dataset/        Test case management
   evaluation/     Fitness scoring, sampling, aggregation
   evolution/      Core loop, islands, RCC, mutation, selection
@@ -132,9 +167,6 @@ api/
   lineage/        Candidate ancestry tracking
   registry/       Prompt registration and section management
   storage/        SQLAlchemy ORM (SQLite/PostgreSQL)
-
-cli/
-  helix_cli/      Standalone CLI (Typer, Rich, YAML projects)
 
 frontend/src/
   components/     React UI (shadcn/ui, Radix primitives)
@@ -222,18 +254,28 @@ Scores are aggregated with tier multipliers: Critical (5x), Normal (1x), Low (0.
 | `generations` | 10 | Number of evolution generations |
 | `n_islands` | 4 | Parallel island populations |
 | `conversations_per_island` | 5 | RCC conversations per island per generation |
-| `n_seq` | 3 | Critic-author turns per conversation |
+| `evolution_profile` | `cost_controlled` | Cost-controlled defaults; use `paper_reference` for four evaluated RCC children and paper-scale initialization |
+| `rcc_rounds` | 3 | RCC revisions per conversation; paper-reference default is 4 evaluated and retained children |
 | `temperature` | 1.0 | Boltzmann selection temperature |
 | `pr_no_parents` | 1/6 | Probability of generating from scratch |
 | `structural_mutation_probability` | 0.2 | Chance of structural mutation per conversation |
-| `population_cap` | 10 | Max candidates per island |
-| `budget_cap_usd` | None | Hard budget cap |
+| `population_cap` | 10 | Max candidates per island; paper-reference default is no cap |
+| `budget_cap_usd` | None | LLM-call scheduling cap in USD |
+
+With the defaults, `cost_controlled` produces roughly 200 final RCC candidates at the
+10-generation upper-scale concept (`10 * 4 * 5`). `paper_reference` uses four evaluated and
+retained RCC children for an upper scale of 800 (`10 * 4 * 5 * 4`), five author attempts, an
+accumulating population, paper-scale initialization, and diverse reset selection. Both profiles
+provide the critic with evidence from every selected parent. Helix evolves prompt templates rather
+than the paper's task solutions, so `paper_reference` is an explicit adaptation, not a claim of
+runtime parity. Partial sampling results are scouting data only and never compete with full-suite
+evaluations. See [Evolution Algorithm](docs/EVOLUTION_ALGORITHM.md) for the exact comparison.
 
 ## Documentation
 
-- [CLI Guide](cli/README.md) -- standalone CLI installation, commands, and YAML file format
 - [Setup Guide](docs/SETUP.md) -- detailed installation, Docker, and deployment instructions
 - [Configuration](docs/CONFIGURATION.md) -- developer vs multi-user mode, environment variables, model roles, auth, and Settings UI
+- [Evolution Algorithm](docs/EVOLUTION_ALGORITHM.md) -- profile behavior, paper comparison, candidate scale, and full-evaluation rules
 - [Import & Export Formats](docs/IMPORT_EXPORT.md) -- JSON/YAML schemas for test cases and personas
 - [Contributing](CONTRIBUTING.md) -- how to contribute to Helix
 - [Architecture](CLAUDE.md) -- detailed codebase documentation and conventions
@@ -248,7 +290,9 @@ Scores are aggregated with tier multipliers: Critical (5x), Normal (1x), Low (0.
 
 ## References
 
-Based on ideas from [Mind Evolution: Evolutionary Optimization of LLM Prompts](https://arxiv.org/abs/2501.09891) (Google DeepMind, 2025).
+Inspired by [Mind Evolution / Evolving Deeper LLM Thinking](https://arxiv.org/abs/2501.09891)
+(Google DeepMind, 2025). Helix adapts its evolutionary ideas to prompt-template optimization and
+does not claim runtime parity with the paper's solution-evolution experiments.
 
 ## License
 

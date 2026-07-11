@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { setToken } from '@/lib/auth'
-import { getApiBaseUrl } from '@/lib/api-config'
+import { apiJson, ApiError } from '@/lib/api-fetch'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -26,23 +26,19 @@ export default function LoginPage() {
     if (isRegister && email) body.email = email
 
     try {
-      const resp = await fetch(`${getApiBaseUrl()}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-
-      if (!resp.ok) {
-        const data = await resp.json().catch(() => ({ detail: 'Request failed' }))
-        setError(data.detail || `Error ${resp.status}`)
-        return
-      }
-
-      const data = await resp.json()
+      const data = await apiJson<{ access_token: string; username: string }>(
+        endpoint,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        },
+        { auth: false, redirectOnUnauthorized: false },
+      )
       setToken(data.access_token, data.username)
       navigate('/prompts', { replace: true })
-    } catch {
-      setError('Could not connect to server')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not connect to server')
     } finally {
       setLoading(false)
     }

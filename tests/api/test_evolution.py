@@ -7,13 +7,15 @@ Uses the shared conftest fixtures (app, client, prompts_dir).
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from unittest.mock import AsyncMock, patch
 
 import httpx
+import pytest
 
 from api.config.models import GenerationConfig
 from api.evolution.models import Candidate, EvolutionResult
-
+from api.web.schemas import EvolutionRunRequest
 
 # -- Helpers --
 
@@ -26,6 +28,17 @@ def _make_evolution_result() -> EvolutionResult:
         total_cost={"total_cost_usd": 0.01},
         termination_reason="generations_complete",
     )
+
+
+def _signal_run(mock_run_evolution: AsyncMock) -> asyncio.Event:
+    run_started = asyncio.Event()
+
+    async def run_evolution(*args, **kwargs):
+        run_started.set()
+        return _make_evolution_result()
+
+    mock_run_evolution.side_effect = run_evolution
+    return run_started
 
 
 async def _setup_prompt_with_cases(
@@ -134,12 +147,16 @@ async def test_start_run_nonexistent_prompt_returns_404(
 async def test_stop_run_cancels_task(
     mock_run_evolution: AsyncMock,
     client: httpx.AsyncClient,
+    app,
 ):
     """POST /api/evolution/{run_id}/stop cancels a running task."""
 
     # Mock a long-running coroutine so the task is still running when we stop it
+    running = asyncio.Event()
+
     async def _long_running(*args, **kwargs):
-        await asyncio.sleep(60)
+        running.set()
+        await asyncio.Event().wait()
 
     mock_run_evolution.side_effect = _long_running
 
@@ -154,16 +171,15 @@ async def test_stop_run_cancels_task(
     run_id = start_resp.json()["run_id"]
     assert start_resp.json()["status"] == "running"
 
-    # Give the event loop a moment to start the task
-    await asyncio.sleep(0.05)
+    await asyncio.wait_for(running.wait(), timeout=1)
 
     # Stop the run
     stop_resp = await client.post(f"/api/evolution/{run_id}/stop")
     assert stop_resp.status_code == 200
     assert stop_resp.json()["status"] == "cancelled"
 
-    # Give the event loop a moment to process cancellation
-    await asyncio.sleep(0.05)
+    with suppress(asyncio.CancelledError):
+        await asyncio.wait_for(app.state.run_manager._runs[run_id].task, timeout=1)
 
     # Verify status shows cancelled
     status_resp = await client.get(f"/api/evolution/{run_id}/status")
@@ -260,7 +276,7 @@ async def test_start_run_threads_overrides_to_run_evolution(
     client: httpx.AsyncClient,
 ):
     """Override fields from request body are passed through to run_evolution kwargs."""
-    mock_run_evolution.return_value = _make_evolution_result()
+    run_started = _signal_run(mock_run_evolution)
 
     await _setup_prompt_with_cases(client)
 
@@ -273,8 +289,7 @@ async def test_start_run_threads_overrides_to_run_evolution(
         },
     )
 
-    # Wait briefly for the task to invoke run_evolution
-    await asyncio.sleep(0.1)
+    await asyncio.wait_for(run_started.wait(), timeout=1)
 
     # Verify run_evolution was called with override kwargs
     mock_run_evolution.assert_called_once()
@@ -282,23 +297,23 @@ async def test_start_run_threads_overrides_to_run_evolution(
     # The overrides should be passed as keyword arguments
     assert call_kwargs.kwargs.get("meta_model") == "custom-meta"
     assert call_kwargs.kwargs.get("target_provider") == "gemini"
-    # Non-specified overrides should be None
-    assert call_kwargs.kwargs.get("meta_provider") is None
-    assert call_kwargs.kwargs.get("target_model") is None
-    assert call_kwargs.kwargs.get("judge_model") is None
-    assert call_kwargs.kwargs.get("judge_provider") is None
+    # Non-specified values resolve from the effective merged config.
+    assert call_kwargs.kwargs.get("meta_provider") == "openrouter"
+    assert call_kwargs.kwargs.get("target_model") == "openai/gpt-4o-mini"
+    assert call_kwargs.kwargs.get("judge_model") == "anthropic/claude-sonnet-4"
+    assert call_kwargs.kwargs.get("judge_provider") == "openrouter"
 
 
 @patch(
     "api.evolution.runner.run_evolution",
     new_callable=AsyncMock,
 )
-async def test_start_run_empty_overrides_passed_as_none(
+async def test_start_run_empty_overrides_use_effective_defaults(
     mock_run_evolution: AsyncMock,
     client: httpx.AsyncClient,
 ):
-    """Empty string overrides are converted to None before passing to run_evolution."""
-    mock_run_evolution.return_value = _make_evolution_result()
+    """Empty string overrides fall back to effective merged values."""
+    run_started = _signal_run(mock_run_evolution)
 
     await _setup_prompt_with_cases(client)
 
@@ -311,26 +326,25 @@ async def test_start_run_empty_overrides_passed_as_none(
         },
     )
 
-    # Wait briefly for the task to invoke run_evolution
-    await asyncio.sleep(0.1)
+    await asyncio.wait_for(run_started.wait(), timeout=1)
 
     mock_run_evolution.assert_called_once()
     call_kwargs = mock_run_evolution.call_args
-    # Empty strings should be converted to None
-    assert call_kwargs.kwargs.get("meta_model") is None
-    assert call_kwargs.kwargs.get("target_provider") is None
+    # Empty strings fall back to the effective merged config.
+    assert call_kwargs.kwargs.get("meta_model") == "anthropic/claude-sonnet-4"
+    assert call_kwargs.kwargs.get("target_provider") == "openrouter"
 
 
 @patch(
     "api.evolution.runner.run_evolution",
     new_callable=AsyncMock,
 )
-async def test_start_run_no_overrides_passes_none(
+async def test_start_run_no_overrides_passes_effective_defaults(
     mock_run_evolution: AsyncMock,
     client: httpx.AsyncClient,
 ):
-    """When no override fields are provided, all override kwargs are None."""
-    mock_run_evolution.return_value = _make_evolution_result()
+    """When no override fields are provided, merged values are passed."""
+    run_started = _signal_run(mock_run_evolution)
 
     await _setup_prompt_with_cases(client)
 
@@ -339,17 +353,16 @@ async def test_start_run_no_overrides_passes_none(
         json={"prompt_id": "test-prompt"},
     )
 
-    # Wait briefly for the task to invoke run_evolution
-    await asyncio.sleep(0.1)
+    await asyncio.wait_for(run_started.wait(), timeout=1)
 
     mock_run_evolution.assert_called_once()
     call_kwargs = mock_run_evolution.call_args
-    assert call_kwargs.kwargs.get("meta_model") is None
-    assert call_kwargs.kwargs.get("meta_provider") is None
-    assert call_kwargs.kwargs.get("target_model") is None
-    assert call_kwargs.kwargs.get("target_provider") is None
-    assert call_kwargs.kwargs.get("judge_model") is None
-    assert call_kwargs.kwargs.get("judge_provider") is None
+    assert call_kwargs.kwargs.get("meta_model") == "anthropic/claude-sonnet-4"
+    assert call_kwargs.kwargs.get("meta_provider") == "openrouter"
+    assert call_kwargs.kwargs.get("target_model") == "openai/gpt-4o-mini"
+    assert call_kwargs.kwargs.get("target_provider") == "openrouter"
+    assert call_kwargs.kwargs.get("judge_model") == "anthropic/claude-sonnet-4"
+    assert call_kwargs.kwargs.get("judge_provider") == "openrouter"
 
 
 # -- Advanced evolution params + inference params threading --
@@ -364,7 +377,13 @@ async def test_start_run_accepts_advanced_params(
     client: httpx.AsyncClient,
 ):
     """POST /api/evolution/start threads advanced evolution params to EvolutionConfig."""
-    mock_run_evolution.return_value = _make_evolution_result()
+    run_started = asyncio.Event()
+
+    async def run_evolution(*args, **kwargs):
+        run_started.set()
+        return _make_evolution_result()
+
+    mock_run_evolution.side_effect = run_evolution
 
     await _setup_prompt_with_cases(client)
 
@@ -382,13 +401,12 @@ async def test_start_run_accepts_advanced_params(
     )
     assert resp.status_code == 200
 
-    # Wait briefly for the task to invoke run_evolution
-    await asyncio.sleep(0.1)
+    await asyncio.wait_for(run_started.wait(), timeout=1)
 
     mock_run_evolution.assert_called_once()
     # The evolution_config is the 4th positional arg (index 3)
     evo_config = mock_run_evolution.call_args[0][3]
-    assert evo_config.n_seq == 5
+    assert evo_config.rcc_rounds == 5
     assert evo_config.population_cap == 20
     assert evo_config.n_emigrate == 3
     assert evo_config.reset_interval == 5
@@ -400,12 +418,101 @@ async def test_start_run_accepts_advanced_params(
     "api.evolution.runner.run_evolution",
     new_callable=AsyncMock,
 )
+async def test_start_run_threads_profile_fields_without_overriding_explicit_values(
+    mock_run_evolution: AsyncMock,
+    client: httpx.AsyncClient,
+):
+    run_started = asyncio.Event()
+
+    async def run_evolution(*args, **kwargs):
+        run_started.set()
+        return _make_evolution_result()
+
+    mock_run_evolution.side_effect = run_evolution
+
+    await _setup_prompt_with_cases(client)
+
+    resp = await client.post(
+        "/api/evolution/start",
+        json={
+            "prompt_id": "test-prompt",
+            "evolution_profile": "paper_reference",
+            "rcc_rounds": 2,
+            "retain_intermediate_children": False,
+            "max_retries": 1,
+            "promotions_per_island": 3,
+        },
+    )
+    assert resp.status_code == 200
+
+    await asyncio.wait_for(run_started.wait(), timeout=1)
+
+    mock_run_evolution.assert_called_once()
+    evo_config = mock_run_evolution.call_args[0][3]
+    assert evo_config.evolution_profile == "paper_reference"
+    assert evo_config.rcc_rounds == 2
+    assert evo_config.retain_intermediate_children is False
+    assert evo_config.max_retries == 1
+    assert evo_config.promotions_per_island == 3
+
+
+@pytest.mark.parametrize(
+    ("request_overrides", "expected_population_cap"),
+    [({}, 10), ({"population_cap": None}, None)],
+)
+@patch(
+    "api.evolution.runner.run_evolution",
+    new_callable=AsyncMock,
+)
+async def test_start_run_preserves_population_cap_presence(
+    mock_run_evolution: AsyncMock,
+    client: httpx.AsyncClient,
+    request_overrides: dict,
+    expected_population_cap: int | None,
+):
+    run_started = asyncio.Event()
+
+    async def run_evolution(*args, **kwargs):
+        run_started.set()
+        return _make_evolution_result()
+
+    mock_run_evolution.side_effect = run_evolution
+
+    await _setup_prompt_with_cases(client)
+
+    resp = await client.post(
+        "/api/evolution/start",
+        json={"prompt_id": "test-prompt", **request_overrides},
+    )
+    assert resp.status_code == 200
+
+    await asyncio.wait_for(run_started.wait(), timeout=1)
+
+    evo_config = mock_run_evolution.call_args[0][3]
+    assert evo_config.population_cap == expected_population_cap
+
+
+def test_evolution_request_serializes_and_documents_public_rcc_rounds():
+    request = EvolutionRunRequest.model_validate({"prompt_id": "p", "n_seq": 2})
+    output = request.model_dump()
+    properties = EvolutionRunRequest.model_json_schema()["properties"]
+
+    assert output["rcc_rounds"] == 2
+    assert "n_seq" not in output
+    assert "rcc_rounds" in properties
+    assert "n_seq" not in properties
+
+
+@patch(
+    "api.evolution.runner.run_evolution",
+    new_callable=AsyncMock,
+)
 async def test_start_run_threads_inference_params(
     mock_run_evolution: AsyncMock,
     client: httpx.AsyncClient,
 ):
     """POST /api/evolution/start threads inference params as generation_config kwarg."""
-    mock_run_evolution.return_value = _make_evolution_result()
+    run_started = _signal_run(mock_run_evolution)
 
     await _setup_prompt_with_cases(client)
 
@@ -423,8 +530,7 @@ async def test_start_run_threads_inference_params(
     )
     assert resp.status_code == 200
 
-    # Wait briefly for the task to invoke run_evolution
-    await asyncio.sleep(0.1)
+    await asyncio.wait_for(run_started.wait(), timeout=1)
 
     mock_run_evolution.assert_called_once()
     gen_config = mock_run_evolution.call_args.kwargs.get("generation_config")
@@ -442,12 +548,12 @@ async def test_start_run_threads_inference_params(
     "api.evolution.runner.run_evolution",
     new_callable=AsyncMock,
 )
-async def test_start_run_no_inference_params_passes_none(
+async def test_start_run_no_inference_params_passes_effective_generation_config(
     mock_run_evolution: AsyncMock,
     client: httpx.AsyncClient,
 ):
-    """When no inference fields provided, generation_config kwarg is None."""
-    mock_run_evolution.return_value = _make_evolution_result()
+    """When no inference fields are provided, merged generation defaults are passed."""
+    run_started = _signal_run(mock_run_evolution)
 
     await _setup_prompt_with_cases(client)
 
@@ -457,12 +563,11 @@ async def test_start_run_no_inference_params_passes_none(
     )
     assert resp.status_code == 200
 
-    # Wait briefly for the task to invoke run_evolution
-    await asyncio.sleep(0.1)
+    await asyncio.wait_for(run_started.wait(), timeout=1)
 
     mock_run_evolution.assert_called_once()
     gen_config = mock_run_evolution.call_args.kwargs.get("generation_config")
-    assert gen_config is None
+    assert gen_config == GenerationConfig()
 
 
 # -- Thinking config threading --
@@ -477,7 +582,7 @@ async def test_thinking_config_threaded_to_run_evolution(
     client: httpx.AsyncClient,
 ):
     """POST with thinking fields builds thinking_config dict and passes to run_evolution."""
-    mock_run_evolution.return_value = _make_evolution_result()
+    run_started = _signal_run(mock_run_evolution)
 
     await _setup_prompt_with_cases(client)
 
@@ -491,8 +596,7 @@ async def test_thinking_config_threaded_to_run_evolution(
     )
     assert resp.status_code == 200
 
-    # Wait briefly for the task to invoke run_evolution
-    await asyncio.sleep(0.1)
+    await asyncio.wait_for(run_started.wait(), timeout=1)
 
     mock_run_evolution.assert_called_once()
     thinking_config = mock_run_evolution.call_args.kwargs.get("thinking_config")
@@ -512,7 +616,7 @@ async def test_no_thinking_config_default(
     client: httpx.AsyncClient,
 ):
     """When no thinking fields provided, thinking_config kwarg is None."""
-    mock_run_evolution.return_value = _make_evolution_result()
+    run_started = _signal_run(mock_run_evolution)
 
     await _setup_prompt_with_cases(client)
 
@@ -522,8 +626,7 @@ async def test_no_thinking_config_default(
     )
     assert resp.status_code == 200
 
-    # Wait briefly for the task to invoke run_evolution
-    await asyncio.sleep(0.1)
+    await asyncio.wait_for(run_started.wait(), timeout=1)
 
     mock_run_evolution.assert_called_once()
     thinking_config = mock_run_evolution.call_args.kwargs.get("thinking_config")

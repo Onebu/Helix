@@ -13,7 +13,7 @@ const KEY_PARAMS = ['generations', 'conversations_per_island', 'n_islands', 'sam
  */
 const HYPER_GROUPS: Record<string, string[]> = {
   'evolution': [
-    'generations', 'conversations_per_island', 'n_seq', 'n_parents',
+    'generations', 'conversations_per_island', 'rcc_rounds', 'n_parents',
     'temperature', 'structural_mutation_probability', 'pr_no_parents',
     'budget_cap_usd', 'population_cap',
   ],
@@ -38,7 +38,7 @@ const HYPER_GROUPS: Record<string, string[]> = {
 export const HYPER_DEFAULTS: Record<string, number | string | null> = {
   generations: 10,
   conversations_per_island: 5,
-  n_seq: 3,
+  rcc_rounds: 3,
   n_parents: 5,
   temperature: 1.0,
   structural_mutation_probability: 0.2,
@@ -106,7 +106,8 @@ interface HyperparameterDisplayProps {
 /**
  * Convert underscore_keys to human-readable Title Case labels.
  */
-function formatLabel(key: string): string {
+function formatLabel(key: string, translate: (key: string) => string): string {
+  if (key === 'rcc_rounds') return translate('evolution.rccRounds')
   return key
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase())
@@ -192,7 +193,7 @@ export default function HyperparameterDisplay({ hyperparameters, modelInfo }: Hy
   // Split into key params (always visible) and advanced params
   const keyEntries = KEY_PARAMS
     .filter((k) => k in flat && flat[k] !== null && flat[k] !== undefined)
-    .map((k) => ({ key: k, label: formatLabel(k), value: flat[k], override: isOverride(k, flat[k]) }))
+    .map((k) => ({ key: k, label: formatLabel(k, t), value: flat[k], override: isOverride(k, flat[k]) }))
 
   return (
     <div className="space-y-1">
@@ -256,7 +257,7 @@ export default function HyperparameterDisplay({ hyperparameters, modelInfo }: Hy
                         {presentKeys.map((k) => (
                           <ParamRow
                             key={k}
-                            label={formatLabel(k)}
+                            label={formatLabel(k, t)}
                             value={flat[k]}
                             override={isOverride(k, flat[k])}
                             t={t}

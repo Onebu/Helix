@@ -24,14 +24,19 @@ from api.evolution.models import Candidate, EvolutionConfig
 from api.evolution.rcc import RCCEngine
 
 
-def _make_report(score: float, rejected: bool = False) -> EvaluationReport:
+def _make_report(
+    score: float,
+    case_ids: list[str],
+    rejected: bool = False,
+) -> EvaluationReport:
     """Create an EvaluationReport with a controlled fitness score."""
     return EvaluationReport(
         fitness=FitnessScore(score=score, rejected=rejected),
         case_results=[
-            CaseResult(case_id="c1", score=score, passed=score == 0),
+            CaseResult(case_id=case_id, score=score, passed=score == 0)
+            for case_id in case_ids
         ],
-        total_cases=1,
+        total_cases=len(case_ids),
         cost_summary={
             "total_calls": 1,
             "total_input_tokens": 10,
@@ -71,7 +76,10 @@ def make_mock_evaluator(score: float = -2.0, delay: float = 0.05) -> AsyncMock:
         nonlocal call_count
         call_count += 1
         await asyncio.sleep(delay)
-        return _make_report(score)
+        cases = kwargs.get("cases")
+        if cases is None and len(args) > 1:
+            cases = args[1]
+        return _make_report(score, [case.id for case in cases or []])
 
     evaluator.evaluate = AsyncMock(side_effect=evaluate_with_delay)
     return evaluator
@@ -89,11 +97,11 @@ def make_mock_rcc(delay: float = 0.02) -> AsyncMock:
     rcc = AsyncMock(spec=RCCEngine)
     rcc_count = 0
 
-    async def rcc_with_delay(*args: Any, **kwargs: Any) -> Candidate:
+    async def rcc_with_delay(*args: Any, **kwargs: Any) -> list[Candidate]:
         nonlocal rcc_count
         rcc_count += 1
         await asyncio.sleep(delay)
-        return _make_candidate(template=f"evolved_{rcc_count} {{{{ x }}}}")
+        return [_make_candidate(template=f"evolved_{rcc_count} {{{{ x }}}}")]
 
     rcc.run_conversation = AsyncMock(side_effect=rcc_with_delay)
     return rcc

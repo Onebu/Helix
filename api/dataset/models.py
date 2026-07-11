@@ -52,6 +52,7 @@ class TestCase(BaseModel):
         tier: Priority tier (critical, normal, low). Default: normal.
         created_at: Timestamp when the case was created.
         tags: Searchable tags for filtering and grouping.
+        source_metadata: Generic provenance metadata for imported cases.
     """
 
     id: str = Field(default_factory=lambda: str(uuid4()))
@@ -64,6 +65,7 @@ class TestCase(BaseModel):
     tier: PriorityTier = PriorityTier.NORMAL
     created_at: datetime = Field(default_factory=datetime.now)
     tags: list[str] = Field(default_factory=list)
+    source_metadata: dict[str, Any] = Field(default_factory=dict)
     invalidation: InvalidationRecord | None = None
     otel: OTelAttributes | None = None
 

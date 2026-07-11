@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from api.config.models import GenerationConfig
 from api.evolution.models import EvolutionConfig
 from api.storage.models import User
 from api.web.auth import get_current_user
@@ -42,6 +41,7 @@ async def start_evolution(
 
     # Load prompt (raises PromptNotFoundError -> 404 via exception handler)
     prompt_record = await registry.load_prompt(body.prompt_id, config)
+    merged_config = prompt_record.config or config
 
     # Load test cases
     cases = await dataset_service.list_cases(body.prompt_id)
@@ -50,6 +50,7 @@ async def start_evolution(
 
     # Build evolution config from request body
     config_kwargs = dict(
+        evolution_profile=body.evolution_profile,
         generations=body.generations,
         n_islands=body.islands,
         conversations_per_island=body.conversations_per_island,
@@ -65,9 +66,19 @@ async def start_evolution(
         config_kwargs["structural_mutation_probability"] = body.structural_mutation_probability
 
     # Thread advanced evolution params from request body
-    for field in ["n_seq", "population_cap", "n_emigrate", "reset_interval", "n_reset", "n_top"]:
+    for field in [
+        "rcc_rounds",
+        "retain_intermediate_children",
+        "max_retries",
+        "promotions_per_island",
+        "population_cap",
+        "n_emigrate",
+        "reset_interval",
+        "n_reset",
+        "n_top",
+    ]:
         val = getattr(body, field)
-        if val is not None:
+        if val is not None or (field == "population_cap" and field in body.model_fields_set):
             config_kwargs[field] = val
 
     # Thread adaptive sampling params from request body
@@ -91,19 +102,19 @@ async def start_evolution(
         val = getattr(body, field)
         if val is not None:
             gen_kwargs[field] = val
-    generation_config = GenerationConfig(**gen_kwargs) if gen_kwargs else None
+    effective_generation_config = merged_config.generation.model_copy(update=gen_kwargs)
 
     # Create the coroutine factory and hand to run manager with event_bus
     event_bus = request.app.state.event_bus
 
     # Resolve effective model/provider values for RunManager persistence
     effective_models = {
-        "meta_model": body.meta_model or config.meta_model,
-        "meta_provider": body.meta_provider or config.meta_provider,
-        "target_model": body.target_model or config.target_model,
-        "target_provider": body.target_provider or config.target_provider,
-        "judge_model": body.judge_model or config.judge_model,
-        "judge_provider": body.judge_provider or config.judge_provider,
+        "meta_model": body.meta_model or merged_config.meta_model,
+        "meta_provider": body.meta_provider or merged_config.meta_provider,
+        "target_model": body.target_model or merged_config.target_model,
+        "target_provider": body.target_provider or merged_config.target_provider,
+        "judge_model": body.judge_model or merged_config.judge_model,
+        "judge_provider": body.judge_provider or merged_config.judge_provider,
     }
 
     # Build per-role thinking config (Gemini-specific)
@@ -111,26 +122,24 @@ async def start_evolution(
     for role in ["meta", "target", "judge"]:
         budget = getattr(body, f"{role}_thinking_budget")
         level = getattr(body, f"{role}_thinking_level")
+        merged_budget = getattr(merged_config, f"{role}_thinking_budget")
         if budget is not None:
             thinking_config[role] = {"thinking_budget": budget}
         elif level is not None:
             thinking_config[role] = {"thinking_level": level}
+        elif merged_budget is not None:
+            thinking_config[role] = {"thinking_budget": merged_budget}
     thinking_config = thinking_config or None
 
     def coro_factory(event_callback=None):
         return run_evolution(
-            config,
+            merged_config,
             prompt_record,
             cases,
             evo_config,
             event_callback=event_callback,
-            meta_model=body.meta_model or None,
-            meta_provider=body.meta_provider or None,
-            target_model=body.target_model or None,
-            target_provider=body.target_provider or None,
-            judge_model=body.judge_model or None,
-            judge_provider=body.judge_provider or None,
-            generation_config=generation_config,
+            **effective_models,
+            generation_config=effective_generation_config,
             thinking_config=thinking_config,
         )
 
@@ -138,10 +147,10 @@ async def start_evolution(
         body.prompt_id,
         coro_factory,
         event_bus=event_bus,
-        config=config,
+        config=merged_config,
         evolution_config=evo_config,
         effective_models=effective_models,
-        generation_config=generation_config,
+        generation_config=effective_generation_config,
         thinking_config=thinking_config,
     )
 

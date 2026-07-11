@@ -27,7 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { getApiBaseUrl } from '@/lib/api-config'
+import { apiJson, ApiError } from '@/lib/api-fetch'
 
 // --- Types ---
 
@@ -84,48 +84,37 @@ const ROLE_ICONS: Record<RoleName, React.ReactNode> = {
 
 // --- API helpers ---
 
-const base = getApiBaseUrl()
-
 async function fetchSettings(): Promise<SettingsResponse> {
-  const res = await fetch(`${base}/api/settings/`)
-  if (!res.ok) throw new Error(`Failed to load settings: ${res.status}`)
-  return res.json()
+  return apiJson('/api/settings/')
 }
 
 async function fetchDefaults(): Promise<SettingsResponse> {
-  const res = await fetch(`${base}/api/settings/defaults`)
-  if (!res.ok) throw new Error(`Failed to load defaults: ${res.status}`)
-  return res.json()
+  return apiJson('/api/settings/defaults')
 }
 
 async function saveSettings(payload: Record<string, unknown>): Promise<SettingsResponse> {
-  const res = await fetch(`${base}/api/settings/`, {
+  return apiJson('/api/settings/', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Save failed (${res.status}): ${text}`)
-  }
-  return res.json()
 }
 
 async function testConnection(provider: string, apiKey: string): Promise<TestConnectionResponse> {
-  const res = await fetch(`${base}/api/settings/test-connection`, {
+  return apiJson('/api/settings/test-connection', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ provider, api_key: apiKey }),
   })
-  if (!res.ok) throw new Error(`Test connection failed: ${res.status}`)
-  return res.json()
 }
 
 async function fetchModels(provider: string): Promise<ModelInfo[]> {
-  const res = await fetch(`${base}/api/models/?provider=${encodeURIComponent(provider)}`)
-  if (res.status === 503) return [] // No API key configured
-  if (!res.ok) throw new Error(`Failed to load models: ${res.status}`)
-  return res.json()
+  try {
+    return await apiJson(`/api/models/?provider=${encodeURIComponent(provider)}`)
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 503) return [] // No API key configured
+    throw error
+  }
 }
 
 // --- Form state shape ---

@@ -9,8 +9,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncGenerator
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -19,18 +18,9 @@ from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from api.web.app import create_app
-from api.web.deps import (
-    _get_session_factory,
-    get_config,
-    get_dataset_service,
-    get_db_session,
-    get_registry,
-)
-from api.web.event_bus import EventBus
-from api.web.run_manager import RunManager
 from api.config.models import GeneConfig, GenerationConfig
 from api.dataset.models import TestCase
+from api.dataset.service import DatasetService
 from api.evaluation.aggregator import FitnessAggregator
 from api.evaluation.evaluator import FitnessEvaluator
 from api.evaluation.renderer import TemplateRenderer
@@ -44,10 +34,18 @@ from api.evolution.selector import BoltzmannSelector
 from api.gateway.cost import CostTracker
 from api.gateway.protocol import LLMProvider
 from api.registry.service import PromptRegistry
-from api.types import LLMResponse, ModelRole
-from api.dataset.service import DatasetService
 from api.storage.models import Base
-
+from api.types import LLMResponse, ModelRole
+from api.web.app import create_app
+from api.web.deps import (
+    _get_session_factory,
+    get_config,
+    get_dataset_service,
+    get_db_session,
+    get_registry,
+)
+from api.web.event_bus import EventBus
+from api.web.run_manager import RunManager
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -92,7 +90,7 @@ def _make_mock_provider(response_content: str) -> AsyncMock:
         input_tokens=100,
         output_tokens=200,
         cost_usd=0.001,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
     mock_provider.__aenter__.return_value = mock_provider
     mock_provider.__aexit__.return_value = None
@@ -120,7 +118,7 @@ async def _build_test_app() -> FastAPI:
     test_registry = PromptRegistry(session_factory)
     test_dataset_service = DatasetService(session_factory)
 
-    async def _override_db_session() -> AsyncGenerator[AsyncSession, None]:
+    async def _override_db_session() -> AsyncGenerator[AsyncSession]:
         async with session_factory() as session:
             yield session
 
@@ -153,7 +151,7 @@ def _make_llm_response(
         input_tokens=10,
         output_tokens=20,
         cost_usd=0.001,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
 
 
@@ -174,8 +172,18 @@ def _build_mock_client(template: str) -> AsyncMock:
             )
 
         if role == ModelRole.JUDGE:
+            criteria = [
+                line.split(". ", 1)[1]
+                for line in messages[-1]["content"].split("## Criteria to Evaluate\n", 1)[1].splitlines()
+                if line[:1].isdigit() and ". " in line
+            ]
             return _make_llm_response(
-                content=json.dumps({"score": 4, "reason": "Good greeting"}),
+                content=json.dumps({
+                    "evaluations": [
+                        {"criterion": criterion, "passed": True, "reason": "Good greeting"}
+                        for criterion in criteria
+                    ]
+                }),
                 role=ModelRole.JUDGE,
             )
 

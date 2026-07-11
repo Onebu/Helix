@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
-import { getApiBaseUrl } from '@/lib/api-config'
+import { apiJson } from '@/lib/api-fetch'
 
 interface MockScenario {
   match_args: Record<string, string>
@@ -18,13 +18,14 @@ interface MockDefinition {
 }
 
 async function fetchMocks(promptId: string): Promise<MockDefinition[]> {
-  const resp = await fetch(`${getApiBaseUrl()}/api/prompts/${promptId}/mocks`)
-  const data = await resp.json()
+  const data = await apiJson<{ mocks?: MockDefinition[] }>(
+    `/api/prompts/${encodeURIComponent(promptId)}/mocks`,
+  )
   return data.mocks || []
 }
 
 async function saveMocks(promptId: string, mocks: MockDefinition[]): Promise<void> {
-  await fetch(`${getApiBaseUrl()}/api/prompts/${promptId}/mocks`, {
+  await apiJson(`/api/prompts/${encodeURIComponent(promptId)}/mocks`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mocks }),

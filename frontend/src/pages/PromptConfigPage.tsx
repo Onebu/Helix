@@ -20,7 +20,7 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/component
 import ModelRoleSelector from '@/components/evolution/ModelRoleSelector'
 import { MockEditor } from '@/components/prompts/MockEditor'
 import ThinkingBudgetControl from '@/components/evolution/ThinkingBudgetControl'
-import { getApiBaseUrl } from '@/lib/api-config'
+import { apiJson, ApiError } from '@/lib/api-fetch'
 
 // --- Types ---
 
@@ -163,28 +163,19 @@ function configToForm(config: PromptConfigResponse): FormState {
 
 // --- API helpers ---
 
-const base = getApiBaseUrl()
-
 async function fetchPromptConfig(promptId: string): Promise<PromptConfigResponse> {
-  const res = await fetch(`${base}/api/prompts/${encodeURIComponent(promptId)}/config`)
-  if (!res.ok) throw new Error(`Failed to load config: ${res.status}`)
-  return res.json()
+  return apiJson(`/api/prompts/${encodeURIComponent(promptId)}/config`)
 }
 
 async function savePromptConfig(
   promptId: string,
   payload: Record<string, unknown>,
 ): Promise<PromptConfigResponse> {
-  const res = await fetch(`${base}/api/prompts/${encodeURIComponent(promptId)}/config`, {
+  return apiJson(`/api/prompts/${encodeURIComponent(promptId)}/config`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Save failed (${res.status}): ${text}`)
-  }
-  return res.json()
 }
 
 // --- Format Guide types & API helpers ---
@@ -202,9 +193,7 @@ interface GenerateSampleResult {
 }
 
 async function fetchFormatGuides(promptId: string): Promise<FormatGuideData[]> {
-  const res = await fetch(`${base}/api/prompts/${encodeURIComponent(promptId)}/format-guides`)
-  if (!res.ok) throw new Error(`Failed to load format guides: ${res.status}`)
-  return res.json()
+  return apiJson(`/api/prompts/${encodeURIComponent(promptId)}/format-guides`)
 }
 
 async function saveFormatGuide(
@@ -212,30 +201,21 @@ async function saveFormatGuide(
   toolName: string,
   examples: string[],
 ): Promise<FormatGuideData> {
-  const res = await fetch(
-    `${base}/api/prompts/${encodeURIComponent(promptId)}/format-guides/${encodeURIComponent(toolName)}`,
+  return apiJson(
+    `/api/prompts/${encodeURIComponent(promptId)}/format-guides/${encodeURIComponent(toolName)}`,
     {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(examples),
     },
   )
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Save failed (${res.status}): ${text}`)
-  }
-  return res.json()
 }
 
 async function deleteFormatGuide(promptId: string, toolName: string): Promise<void> {
-  const res = await fetch(
-    `${base}/api/prompts/${encodeURIComponent(promptId)}/format-guides/${encodeURIComponent(toolName)}`,
+  await apiJson<void>(
+    `/api/prompts/${encodeURIComponent(promptId)}/format-guides/${encodeURIComponent(toolName)}`,
     { method: 'DELETE' },
   )
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Delete failed (${res.status}): ${text}`)
-  }
 }
 
 async function generateSample(
@@ -243,25 +223,23 @@ async function generateSample(
   toolName: string,
   scenarioType: string,
 ): Promise<GenerateSampleResult> {
-  const res = await fetch(
-    `${base}/api/prompts/${encodeURIComponent(promptId)}/format-guides/generate-sample`,
+  return apiJson(
+    `/api/prompts/${encodeURIComponent(promptId)}/format-guides/generate-sample`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tool_name: toolName, scenario_type: scenarioType }),
     },
   )
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Generate sample failed (${res.status}): ${text}`)
-  }
-  return res.json()
 }
 
 async function fetchPromptDetail(promptId: string): Promise<{ tools?: { function: { name: string } }[] | null; tool_schemas?: { name: string }[] | null }> {
-  const res = await fetch(`${base}/api/prompts/${encodeURIComponent(promptId)}`)
-  if (!res.ok) return { tools: null, tool_schemas: null }
-  return res.json()
+  try {
+    return await apiJson(`/api/prompts/${encodeURIComponent(promptId)}`)
+  } catch (error) {
+    if (error instanceof ApiError) return { tools: null, tool_schemas: null }
+    throw error
+  }
 }
 
 /** Extract tool names from a prompt's tools or tool_schemas fields. */

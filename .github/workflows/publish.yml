@@ -3,8 +3,7 @@ name: Publish to PyPI
 on:
   push:
     tags:
-      - "engine-v*"    # e.g. engine-v0.1.0
-      - "cli-v*"       # e.g. cli-v0.1.0
+      - "engine-v*"
 
 permissions:
   id-token: write      # trusted publishing (no API token needed)
@@ -22,17 +21,3 @@ jobs:
       - run: pip install build
       - run: python -m build
       - uses: pypa/gh-action-pypi-publish@release/v1
-
-  publish-cli:
-    if: startsWith(github.ref, 'refs/tags/cli-v')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-      - run: pip install build
-      - run: cd cli && python -m build
-      - uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: cli/dist/

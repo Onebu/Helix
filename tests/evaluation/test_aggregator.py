@@ -3,7 +3,7 @@
 import pytest
 
 from api.evaluation.aggregator import FitnessAggregator
-from api.evaluation.models import CaseResult, FitnessScore
+from api.evaluation.models import CaseResult, EvaluationInvalidError
 
 
 @pytest.fixture
@@ -26,12 +26,9 @@ def custom_aggregator() -> FitnessAggregator:
 
 
 def test_aggregate_empty_results(aggregator: FitnessAggregator) -> None:
-    """Empty results list returns score=0.0, not rejected."""
-    result = aggregator.aggregate([])
-    assert isinstance(result, FitnessScore)
-    assert result.score == 0.0
-    assert result.rejected is False
-    assert result.case_results == []
+    """Empty results cannot produce a trustworthy evaluation."""
+    with pytest.raises(EvaluationInvalidError, match="no case results"):
+        aggregator.aggregate([])
 
 
 # --- Critical failures with penalty amplification ---
@@ -44,8 +41,8 @@ def test_aggregate_critical_failure_rejects(aggregator: FitnessAggregator) -> No
     ]
     fitness = aggregator.aggregate(results)
     assert fitness.score == -10.0
-    # -10.0 is NOT < -10 (it's equal), so rejected=False
-    assert fitness.rejected is False
+    assert fitness.rejected is True
+    assert fitness.rejection_reason == "Critical case failed: c1"
     assert fitness.case_results == results
 
 
@@ -57,7 +54,19 @@ def test_aggregate_multiple_critical_failures(aggregator: FitnessAggregator) -> 
     ]
     fitness = aggregator.aggregate(results)
     assert fitness.score == -20.0
-    assert fitness.rejected is True  # -20 < -10
+    assert fitness.rejected is True
+    assert fitness.rejection_reason == "Critical case failed: c1, c2"
+
+
+def test_large_noncritical_penalty_does_not_reject(aggregator: FitnessAggregator) -> None:
+    """Numeric penalty magnitude does not turn a soft case into a hard rejection."""
+    fitness = aggregator.aggregate(
+        [CaseResult(case_id="n1", tier="normal", score=-20, passed=False)]
+    )
+
+    assert fitness.score == -20
+    assert fitness.rejected is False
+    assert fitness.rejection_reason is None
 
 
 # --- Critical cases all pass ---
@@ -141,7 +150,7 @@ def test_aggregate_custom_critical_multiplier(custom_aggregator: FitnessAggregat
     ]
     fitness = custom_aggregator.aggregate(results)
     assert fitness.score == pytest.approx(-20.0)
-    assert fitness.rejected is True  # -20 < -10
+    assert fitness.rejected is True
 
 
 # --- Case-insensitive tier matching ---
@@ -255,10 +264,100 @@ def test_normalized_score_subset(aggregator: FitnessAggregator) -> None:
     assert fitness.normalized_score == pytest.approx(-1.0)
 
 
-def test_aggregate_empty_results_normalized(aggregator: FitnessAggregator) -> None:
-    """Empty results list returns normalized_score=0.0."""
-    result = aggregator.aggregate([])
-    assert result.normalized_score == pytest.approx(0.0)
+def test_normalized_score_uses_behavior_criterion_count(
+    aggregator: FitnessAggregator,
+) -> None:
+    """Three behavior criteria configure a maximum case penalty of six."""
+    fitness = aggregator.aggregate(
+        [
+            CaseResult(
+                case_id="behavior",
+                score=-2,
+                passed=False,
+                expected={"behavior": ["one", "two", "three"]},
+            )
+        ]
+    )
+
+    assert fitness.normalized_score == pytest.approx(-1.0 / 3.0)
+
+
+@pytest.mark.parametrize(
+    ("expected", "score", "expected_normalized"),
+    [
+        ({"behavior": "one"}, -1, -0.5),
+        ({"tool_calls": [{"name": "lookup", "arguments": {}}]}, -1, -0.5),
+        (
+            {
+                "tool_calls": [{"name": "lookup", "arguments": {}}],
+                "behavior": ["one", "two"],
+            },
+            -2,
+            -1.0 / 3.0,
+        ),
+        (None, -1, -0.5),
+    ],
+)
+def test_normalized_score_uses_expected_scoring_capacity(
+    aggregator: FitnessAggregator,
+    expected: dict | None,
+    score: float,
+    expected_normalized: float,
+) -> None:
+    fitness = aggregator.aggregate(
+        [
+            CaseResult(
+                case_id="case",
+                score=score,
+                passed=False,
+                expected=expected,
+            )
+        ]
+    )
+
+    assert fitness.normalized_score == pytest.approx(expected_normalized)
+
+
+def test_synthetic_behavior_normalization_scales_score_and_capacity(
+    aggregator: FitnessAggregator,
+) -> None:
+    fitness = aggregator.aggregate(
+        [
+            CaseResult(
+                case_id="synthetic",
+                score=-1,
+                passed=False,
+                expected={"behavior": ["one", "two"]},
+                synthetic=True,
+            )
+        ]
+    )
+
+    assert fitness.score == pytest.approx(-0.5)
+    assert fitness.normalized_score == pytest.approx(-0.25)
+
+
+@pytest.mark.parametrize(
+    ("score", "expected_normalized"),
+    [(-3, -1.0), (1, 0.0)],
+)
+def test_normalized_score_is_clamped(
+    aggregator: FitnessAggregator,
+    score: float,
+    expected_normalized: float,
+) -> None:
+    fitness = aggregator.aggregate(
+        [
+            CaseResult(
+                case_id="exact",
+                score=score,
+                passed=score == 0,
+                expected={"tool_calls": [{"name": "lookup", "arguments": {}}]},
+            )
+        ]
+    )
+
+    assert fitness.normalized_score == expected_normalized
 
 
 def test_normalized_score_partial_fail(aggregator: FitnessAggregator) -> None:

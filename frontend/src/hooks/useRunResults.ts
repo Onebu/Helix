@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { RunResults, LineageNode, CaseResultData, GenerationRecordData } from '../types/evolution';
-import { getApiBaseUrl } from '../lib/api-config';
+import type { CaseResultResponse, LineageEventResponse, RunResultsResponse } from '../client/types.gen';
+import { apiJson, ApiError } from '../lib/api-fetch';
 
 interface UseRunResultsReturn {
   data: RunResults | null;
@@ -9,7 +10,11 @@ interface UseRunResultsReturn {
 }
 
 /** Transform a snake_case lineage event object to camelCase LineageNode. */
-function transformLineageEvent(raw: Record<string, unknown>): LineageNode {
+function transformLineageEvent(raw: LineageEventResponse): LineageNode {
+  const evidence = raw as LineageEventResponse & {
+    cases_passed?: number;
+    total_cases?: number;
+  };
   return {
     candidateId: raw.candidate_id as string,
     parentIds: (raw.parent_ids as string[]) ?? [],
@@ -20,12 +25,14 @@ function transformLineageEvent(raw: Record<string, unknown>): LineageNode {
     rejected: (raw.rejected as boolean) ?? false,
     mutationType: (raw.mutation_type as string) ?? 'rcc',
     survived: (raw.survived as boolean) ?? true,
-    template: raw.template as string | undefined,
+    template: raw.template ?? undefined,
+    casesPassed: evidence.cases_passed,
+    totalCases: evidence.total_cases,
   };
 }
 
 /** Transform a snake_case case result object to camelCase CaseResultData. */
-function transformCaseResult(raw: Record<string, unknown>): CaseResultData {
+function transformCaseResult(raw: CaseResultResponse): CaseResultData {
   return {
     caseId: raw.case_id as string,
     tier: (raw.tier as string) ?? 'normal',
@@ -35,7 +42,7 @@ function transformCaseResult(raw: Record<string, unknown>): CaseResultData {
     expected: raw.expected as Record<string, unknown> | null | undefined,
     actualContent: raw.actual_content as string | null | undefined,
     actualToolCalls: raw.actual_tool_calls as Record<string, unknown>[] | null | undefined,
-    criteriaResults: (raw.criteria_results as Array<Record<string, unknown>> | null | undefined)?.map(cr => ({
+    criteriaResults: raw.criteria_results?.map(cr => ({
       criterion: cr.criterion as string,
       passed: cr.passed as boolean,
       reason: cr.reason as string,
@@ -63,43 +70,46 @@ export function useRunResults(runId: string, refetchKey?: number): UseRunResults
     setLoading(true);
     setError(null);
 
-    const baseUrl = getApiBaseUrl();
-
     async function fetchWithRetry(attempt = 0): Promise<RunResults> {
+      const encodedRunId = encodeURIComponent(runId);
+      let raw: RunResultsResponse;
+
       // Try UUID lookup first
-      const uuidUrl = `${baseUrl}/api/history/run/by-uuid/${runId}/results`;
-      let resp = await fetch(uuidUrl);
-
-      if (!resp.ok && resp.status === 404) {
+      try {
+        raw = await apiJson<RunResultsResponse>(
+          `/api/history/run/by-uuid/${encodedRunId}/results`,
+        );
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.status !== 404) throw error;
         // Fall back to integer ID (backward compat for old URLs)
-        const intUrl = `${baseUrl}/api/history/run/${runId}/results`;
-        resp = await fetch(intUrl);
-      }
-
-      if (!resp.ok) {
-        if (resp.status === 404 && attempt < 2) {
-          // Retry with delay (race condition safety net for persistence lag)
-          await new Promise(r => setTimeout(r, 1500));
-          return fetchWithRetry(attempt + 1);
+        try {
+          raw = await apiJson<RunResultsResponse>(
+            `/api/history/run/${encodedRunId}/results`,
+          );
+        } catch (fallbackError) {
+          if (fallbackError instanceof ApiError && fallbackError.status === 404 && attempt < 2) {
+            // Retry with delay (race condition safety net for persistence lag)
+            await new Promise(r => setTimeout(r, 1500));
+            return fetchWithRetry(attempt + 1);
+          }
+          throw fallbackError;
         }
-        throw new Error(`Failed to fetch results: ${resp.status}`);
       }
 
-      const raw = await resp.json();
       return {
         promptId: raw.prompt_id ?? null,
         lineageEvents: (raw.lineage_events ?? []).map(transformLineageEvent),
         caseResults: (raw.case_results ?? []).map(transformCaseResult),
         seedCaseResults: (raw.seed_case_results ?? []).map(transformCaseResult),
         generationRecords: (raw.generation_records ?? []).map(
-          (gr: Record<string, unknown>): GenerationRecordData => ({
-            generation: gr.generation as number,
-            bestFitness: gr.best_fitness as number,
-            avgFitness: gr.avg_fitness as number,
-            bestNormalized: (gr.best_normalized as number) ?? 0,
-            avgNormalized: (gr.avg_normalized as number) ?? 0,
-            candidatesEvaluated: (gr.candidates_evaluated as number) ?? 0,
-            costSummary: (gr.cost_summary as Record<string, unknown>) ?? {},
+          (gr): GenerationRecordData => ({
+            generation: gr.generation,
+            bestFitness: gr.best_fitness,
+            avgFitness: gr.avg_fitness,
+            bestNormalized: gr.best_normalized ?? 0,
+            avgNormalized: gr.avg_normalized ?? 0,
+            candidatesEvaluated: gr.candidates_evaluated ?? 0,
+            costSummary: gr.cost_summary ?? {},
           })
         ),
         bestCandidateId: raw.best_candidate_id ?? null,

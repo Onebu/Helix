@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getApiBaseUrl } from '../lib/api-config';
+import { apiJson } from '../lib/api-fetch';
 
 export interface ModelInfo {
   id: string;
@@ -18,12 +18,7 @@ export interface ModelInfo {
 export function useModels(provider: string | null) {
   return useQuery<ModelInfo[]>({
     queryKey: ['models', provider],
-    queryFn: async () => {
-      const baseUrl = getApiBaseUrl();
-      const resp = await fetch(`${baseUrl}/api/models/?provider=${provider}`);
-      if (!resp.ok) throw new Error(`Failed to fetch models: ${resp.status}`);
-      return resp.json();
-    },
+    queryFn: () => apiJson<ModelInfo[]>(`/api/models/?provider=${encodeURIComponent(provider!)}`),
     enabled: !!provider,
     staleTime: 5 * 60 * 1000, // 5 minutes -- matches backend cache TTL
   });

@@ -45,6 +45,7 @@ def _case_to_response(case: TestCase) -> TestCaseResponse:
         tags=case.tags,
         chat_history=case.chat_history,
         tools=case.tools,
+        source_metadata=case.source_metadata,
     )
 
 
@@ -88,6 +89,7 @@ async def add_case(
         expected_output=body.expected_output,
         tier=PriorityTier(body.tier),
         tags=body.tags,
+        source_metadata=body.source_metadata,
     )
     created, warnings = await service.add_case(prompt_id, case)
     resp = _case_to_response(created)

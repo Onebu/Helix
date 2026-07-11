@@ -6,9 +6,8 @@ using mocked LLM responses.
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
-
 
 from api.config.models import GeneConfig, GenerationConfig
 from api.dataset.models import PriorityTier
@@ -16,7 +15,7 @@ from api.dataset.service import DatasetService
 from api.evaluation.aggregator import FitnessAggregator
 from api.evaluation.evaluator import FitnessEvaluator
 from api.evaluation.renderer import TemplateRenderer
-from api.evaluation.scorers import ExactMatchScorer, BehaviorJudgeScorer
+from api.evaluation.scorers import BehaviorJudgeScorer, ExactMatchScorer
 from api.evaluation.validator import TemplateValidator
 from api.evolution.islands import IslandEvolver
 from api.evolution.models import EvolutionConfig
@@ -29,7 +28,6 @@ from api.gateway.litellm_provider import LiteLLMProvider
 from api.gateway.protocol import LLMProvider
 from api.registry.service import PromptRegistry
 from api.types import LLMResponse, ModelRole
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -50,7 +48,7 @@ def _make_llm_response(
         input_tokens=10,
         output_tokens=20,
         cost_usd=0.001,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
 
 
@@ -90,8 +88,18 @@ def _build_mock_client(ivr_prompt_template: str) -> AsyncMock:
             )
 
         if role == ModelRole.JUDGE:
+            criteria = [
+                line.split(". ", 1)[1]
+                for line in messages[-1]["content"].split("## Criteria to Evaluate\n", 1)[1].splitlines()
+                if line[:1].isdigit() and ". " in line
+            ]
             return _make_llm_response(
-                content=json.dumps({"score": 4, "reason": "Good response"}),
+                content=json.dumps({
+                    "evaluations": [
+                        {"criterion": criterion, "passed": True, "reason": "Good response"}
+                        for criterion in criteria
+                    ]
+                }),
                 role=ModelRole.JUDGE,
             )
 

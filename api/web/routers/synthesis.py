@@ -229,9 +229,7 @@ async def _run_synthesis_background(
                     if pc_row.extra:
                         overrides.update(pc_row.extra)
                     if overrides:
-                        merged_config = load_prompt_config(
-                            config, prompt_dir=None, overrides_dict=overrides
-                        )
+                        merged_config = load_prompt_config(config, overrides_dict=overrides)
             finally:
                 await session.close()
 

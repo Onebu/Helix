@@ -33,6 +33,17 @@ describe('FitnessChart', () => {
     expect(screen.getByTestId('line-chart')).toBeInTheDocument()
   })
 
+  it('describes the start, best, and final full-suite fitness in text', () => {
+    render(<FitnessChart data={sampleGenerations} />)
+
+    const chart = screen.getByRole('figure', { name: 'Fitness Progression' })
+    const summaryId = chart.getAttribute('aria-describedby')
+    expect(summaryId).toBeTruthy()
+    expect(document.getElementById(summaryId!)).toHaveTextContent(
+      'Full-suite fitness: start 0.50, best 0.90, final 0.90.',
+    )
+  })
+
   it('renders both "Best Fitness" and "Avg Fitness" legend entries', () => {
     render(<FitnessChart data={sampleGenerations} />)
     expect(screen.getByTestId('line-Best Fitness')).toHaveTextContent('Best Fitness')

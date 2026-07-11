@@ -15,8 +15,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Save, Settings2, Trash2 } from 'lucide-react'
-
-const apiBase = import.meta.env.VITE_API_URL || ''
+import { apiJson } from '@/lib/api-fetch'
 
 interface PresetSelectorProps {
   activePreset: string | null
@@ -45,16 +44,13 @@ export default function PresetSelector({
   // Fetch custom presets
   const { data: customPresets = [] } = useQuery({
     queryKey: ['presets', 'evolution'],
-    queryFn: async () => {
-      const res = await fetch(`${apiBase}/api/presets/?type=evolution`)
-      return res.json() as Promise<PresetResponse[]>
-    },
+    queryFn: () => apiJson<PresetResponse[]>('/api/presets/?type=evolution'),
   })
 
   // Create preset mutation
   const createMutation = useMutation({
     mutationFn: async (name: string) => {
-      const res = await fetch(`${apiBase}/api/presets`, {
+      return apiJson<PresetResponse>('/api/presets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -64,7 +60,6 @@ export default function PresetSelector({
           is_default: false,
         }),
       })
-      return res.json() as Promise<PresetResponse>
     },
     onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ['presets', 'evolution'] })
@@ -78,12 +73,11 @@ export default function PresetSelector({
   // Update preset mutation (rename)
   const updateMutation = useMutation({
     mutationFn: async ({ id, name }: { id: number; name: string }) => {
-      const res = await fetch(`${apiBase}/api/presets/${id}`, {
+      return apiJson<PresetResponse>(`/api/presets/${encodeURIComponent(String(id))}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
       })
-      return res.json() as Promise<PresetResponse>
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['presets', 'evolution'] })
@@ -93,7 +87,7 @@ export default function PresetSelector({
   // Delete preset mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      await fetch(`${apiBase}/api/presets/${id}`, { method: 'DELETE' })
+      await apiJson<void>(`/api/presets/${encodeURIComponent(String(id))}`, { method: 'DELETE' })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['presets', 'evolution'] })

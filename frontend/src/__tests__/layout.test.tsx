@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Routes, Route } from 'react-router-dom'
@@ -70,5 +71,35 @@ describe('AppShell', () => {
 
     // Both mobile and desktop sidebars render the app name
     expect(screen.getAllByText('Helix').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('opens the mobile navigation as a labelled Radix sheet', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(
+      <Routes>
+        <Route element={<AppShell />}>
+          <Route path="*" element={<div>content</div>} />
+        </Route>
+      </Routes>
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+    expect(screen.getByRole('dialog', { name: 'Navigation' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Close navigation menu' })).toBeVisible()
+  })
+
+  it('gives every sidebar button an accessible name', () => {
+    renderWithProviders(
+      <Routes>
+        <Route element={<AppShell />}>
+          <Route path="*" element={<div>content</div>} />
+        </Route>
+      </Routes>
+    )
+
+    for (const button of screen.getAllByRole('button')) {
+      expect(button).toHaveAccessibleName()
+    }
+    expect(screen.getByRole('link', { name: 'Skip to main content' })).toBeInTheDocument()
   })
 })

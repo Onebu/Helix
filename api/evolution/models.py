@@ -2,7 +2,7 @@
 
 Defines the core value objects used throughout the evolution sub-package:
 - Candidate: an evolved prompt template with its fitness evaluation
-- EvolutionConfig: all hyperparameters with Mind Evolution paper defaults
+- EvolutionConfig: hyperparameters with Helix profile defaults and paper-inspired adaptations
 - GenerationRecord: per-generation metrics
 - EvolutionResult: final evolution output with termination reason
 """
@@ -10,12 +10,14 @@ Defines the core value objects used throughout the evolution sub-package:
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
 from api.evaluation.models import EvaluationReport
 from api.types import OTelAttributes
+
+EvolutionProfile = Literal["cost_controlled", "paper_reference"]
 
 
 class Candidate(BaseModel):
@@ -49,18 +51,18 @@ class Candidate(BaseModel):
 class EvolutionConfig(BaseModel):
     """Hyperparameters for the evolution loop.
 
-    Defaults are derived from the Mind Evolution paper
-    (arXiv:2501.09891) adapted for prompt optimization.
+    The default profile controls costs for API users. The paper-reference
+    profile restores larger values where the public API does not override them.
 
     Attributes:
         generations: Number of evolution generations to run (>= 1).
         conversations_per_island: Number of RCC conversations per generation (>= 1).
-        n_seq: Number of sequential refinement turns per conversation (>= 1).
+        rcc_rounds: Number of RCC refinement rounds per conversation (>= 1).
         n_parents: Number of parents selected per conversation (>= 0).
         temperature: Boltzmann selection temperature (> 0). Higher = more random.
         structural_mutation_probability: Probability of structural mutation per conversation [0, 1].
         pr_no_parents: Probability of generating from scratch (no parents) [0, 1].
-        budget_cap_usd: Hard budget cap in USD. None means no limit.
+        budget_cap_usd: Pre-call scheduling budget cap in USD; None means no limit.
         population_cap: Maximum population size per island.
         n_islands: Number of islands for island model evolution (>= 1).
         n_emigrate: Number of top candidates to emigrate between islands per migration (>= 0).
@@ -69,15 +71,22 @@ class EvolutionConfig(BaseModel):
         n_top: Number of top candidates to preserve during island reset (>= 1).
     """
 
+    evolution_profile: EvolutionProfile = "cost_controlled"
     generations: int = 10
     conversations_per_island: int = 5
-    n_seq: int = 3
+    rcc_rounds: int = Field(
+        default=3,
+        validation_alias=AliasChoices("rcc_rounds", "n_seq"),
+    )
+    retain_intermediate_children: bool = False
+    max_retries: int = 3
+    promotions_per_island: int = 1
     n_parents: int = 5
     temperature: float = 1.0
     structural_mutation_probability: float = 0.2
     pr_no_parents: float = Field(default=1 / 6)
     budget_cap_usd: float | None = None
-    population_cap: int = 10
+    population_cap: int | None = 10
 
     # Island model fields (Mind Evolution paper defaults)
     n_islands: int = 4
@@ -86,7 +95,7 @@ class EvolutionConfig(BaseModel):
     n_reset: int = 2
     n_top: int = 5
 
-    # Initial diversity: number of RCC seed variants per island (0 = paper default: clone only)
+    # Cost-controlled initialization variants; paper-reference uses shared sequential initialization.
     n_seed_variants: int = 3
 
     # Subset sampling fields
@@ -99,32 +108,56 @@ class EvolutionConfig(BaseModel):
     adaptive_min_rate: float = 0.1
     checkpoint_interval: int = 3  # Full eval every N generations (0 = disabled)
 
-    @field_validator("generations")
+    @model_validator(mode="after")
+    def resolve_profile(self) -> EvolutionConfig:
+        if self.evolution_profile != "paper_reference":
+            return self
+        if "rcc_rounds" not in self.model_fields_set:
+            self.rcc_rounds = 4
+        if "retain_intermediate_children" not in self.model_fields_set:
+            self.retain_intermediate_children = True
+        if "max_retries" not in self.model_fields_set:
+            self.max_retries = 5
+        if "population_cap" not in self.model_fields_set:
+            self.population_cap = None
+        return self
+
+    @field_validator(
+        "generations",
+        "conversations_per_island",
+        "rcc_rounds",
+        "max_retries",
+        "promotions_per_island",
+        "population_cap",
+        "n_islands",
+        "n_top",
+        "sample_size",
+    )
     @classmethod
-    def generations_at_least_one(cls, v: int) -> int:
-        if v < 1:
-            raise ValueError("generations must be >= 1")
+    def positive_integer(cls, v: int | None) -> int | None:
+        if v is not None and v < 1:
+            raise ValueError("value must be >= 1")
         return v
 
-    @field_validator("conversations_per_island")
+    @field_validator(
+        "n_parents",
+        "n_emigrate",
+        "reset_interval",
+        "n_reset",
+        "n_seed_variants",
+        "checkpoint_interval",
+    )
     @classmethod
-    def conversations_at_least_one(cls, v: int) -> int:
-        if v < 1:
-            raise ValueError("conversations_per_island must be >= 1")
-        return v
-
-    @field_validator("n_seq")
-    @classmethod
-    def n_seq_at_least_one(cls, v: int) -> int:
-        if v < 1:
-            raise ValueError("n_seq must be >= 1")
-        return v
-
-    @field_validator("n_parents")
-    @classmethod
-    def n_parents_non_negative(cls, v: int) -> int:
+    def non_negative_integer(cls, v: int) -> int:
         if v < 0:
-            raise ValueError("n_parents must be >= 0")
+            raise ValueError("value must be >= 0")
+        return v
+
+    @field_validator("budget_cap_usd")
+    @classmethod
+    def budget_cap_non_negative(cls, v: float | None) -> float | None:
+        if v is not None and v < 0:
+            raise ValueError("budget_cap_usd must be >= 0")
         return v
 
     @field_validator("temperature")
@@ -148,53 +181,11 @@ class EvolutionConfig(BaseModel):
             raise ValueError("pr_no_parents must be in [0.0, 1.0]")
         return v
 
-    @field_validator("n_islands")
-    @classmethod
-    def n_islands_at_least_one(cls, v: int) -> int:
-        if v < 1:
-            raise ValueError("n_islands must be >= 1")
-        return v
-
-    @field_validator("n_emigrate")
-    @classmethod
-    def n_emigrate_non_negative(cls, v: int) -> int:
-        if v < 0:
-            raise ValueError("n_emigrate must be >= 0")
-        return v
-
-    @field_validator("reset_interval")
-    @classmethod
-    def reset_interval_non_negative(cls, v: int) -> int:
-        if v < 0:
-            raise ValueError("reset_interval must be >= 0")
-        return v
-
-    @field_validator("n_reset")
-    @classmethod
-    def n_reset_non_negative(cls, v: int) -> int:
-        if v < 0:
-            raise ValueError("n_reset must be >= 0")
-        return v
-
-    @field_validator("n_top")
-    @classmethod
-    def n_top_at_least_one(cls, v: int) -> int:
-        if v < 1:
-            raise ValueError("n_top must be >= 1")
-        return v
-
     @field_validator("sample_ratio")
     @classmethod
     def sample_ratio_in_range(cls, v: float | None) -> float | None:
-        if v is not None and (v < 0.0 or v > 1.0):
-            raise ValueError("sample_ratio must be in [0.0, 1.0]")
-        return v
-
-    @field_validator("sample_size")
-    @classmethod
-    def sample_size_non_negative(cls, v: int | None) -> int | None:
-        if v is not None and v < 0:
-            raise ValueError("sample_size must be >= 0")
+        if v is not None and (v <= 0.0 or v > 1.0):
+            raise ValueError("sample_ratio must be in (0.0, 1.0]")
         return v
 
     @field_validator("adaptive_decay_constant")
@@ -209,13 +200,6 @@ class EvolutionConfig(BaseModel):
     def adaptive_min_rate_in_range(cls, v: float) -> float:
         if v < 0.0 or v > 1.0:
             raise ValueError("adaptive_min_rate must be in [0.0, 1.0]")
-        return v
-
-    @field_validator("checkpoint_interval")
-    @classmethod
-    def checkpoint_interval_non_negative(cls, v: int) -> int:
-        if v < 0:
-            raise ValueError("checkpoint_interval must be >= 0")
         return v
 
 

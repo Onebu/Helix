@@ -27,6 +27,7 @@ function truncate(text: string, max: number): string {
 }
 
 function PassIcon({ caseId }: { caseId: string }) {
+  const { t } = useTranslation()
   return (
     <svg
       data-testid={`result-pass-${caseId}`}
@@ -36,7 +37,7 @@ function PassIcon({ caseId }: { caseId: string }) {
       strokeWidth={2}
       stroke="currentColor"
       role="img"
-      aria-label="Passed"
+      aria-label={t('evolution.pass')}
     >
       <path
         strokeLinecap="round"
@@ -48,6 +49,7 @@ function PassIcon({ caseId }: { caseId: string }) {
 }
 
 function FailIcon({ caseId }: { caseId: string }) {
+  const { t } = useTranslation()
   return (
     <svg
       data-testid={`result-fail-${caseId}`}
@@ -57,7 +59,7 @@ function FailIcon({ caseId }: { caseId: string }) {
       strokeWidth={2}
       stroke="currentColor"
       role="img"
-      aria-label="Failed"
+      aria-label={t('evolution.fail')}
     >
       <path
         strokeLinecap="round"
@@ -86,7 +88,7 @@ function DetailPanel({
         <pre className="max-h-48 overflow-auto rounded bg-muted p-3 text-xs text-foreground">
           {caseResult.expected
             ? JSON.stringify(caseResult.expected, null, 2)
-            : '(none)'}
+            : t('common.none')}
         </pre>
       </div>
 
@@ -122,15 +124,15 @@ function DetailPanel({
             {/* Show improvement badge */}
             {caseResult.score > seedResult.score ? (
               <span className="rounded-full bg-score-positive/20 px-2 py-0.5 text-xs font-semibold text-score-positive">
-                Improved ({(caseResult.score - seedResult.score).toFixed(1)})
+                {t('evolution.improvedDelta', { delta: (caseResult.score - seedResult.score).toFixed(1) })}
               </span>
             ) : caseResult.score === seedResult.score ? (
               <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
-                No change
+                {t('evolution.noChange')}
               </span>
             ) : (
               <span className="rounded-full bg-score-negative/20 px-2 py-0.5 text-xs font-semibold text-score-negative">
-                Regressed ({(caseResult.score - seedResult.score).toFixed(1)})
+                {t('evolution.regressedDelta', { delta: (caseResult.score - seedResult.score).toFixed(1) })}
               </span>
             )}
           </div>
@@ -140,7 +142,7 @@ function DetailPanel({
               <p className="mb-1 text-xs font-semibold text-muted-foreground">{t('evolution.seedOriginalPrompt')}</p>
               <div className="flex items-center gap-2">
                 <span className={`text-xs font-semibold ${seedResult.passed ? 'text-score-positive' : 'text-score-negative'}`}>
-                  {seedResult.passed ? 'PASS' : 'FAIL'}
+                  {seedResult.passed ? t('evolution.pass') : t('evolution.fail')}
                 </span>
                 <span className="text-xs font-mono" style={{ color: scoreColor(seedResult.score) }}>
                   {seedResult.score.toFixed(3)}
@@ -153,7 +155,7 @@ function DetailPanel({
               <p className="mb-1 text-xs font-semibold text-muted-foreground">{t('evolution.evolvedBestCandidate')}</p>
               <div className="flex items-center gap-2">
                 <span className={`text-xs font-semibold ${caseResult.passed ? 'text-score-positive' : 'text-score-negative'}`}>
-                  {caseResult.passed ? 'PASS' : 'FAIL'}
+                  {caseResult.passed ? t('evolution.pass') : t('evolution.fail')}
                 </span>
                 <span className="text-xs font-mono" style={{ color: scoreColor(caseResult.score) }}>
                   {caseResult.score.toFixed(3)}
@@ -248,7 +250,7 @@ export default function CaseResultsGrid({
       {/* Header with summary stats */}
       <div className="px-4 py-3 border-b border-border">
         <div className="flex items-center gap-4 text-sm">
-          <h3 className="text-sm font-semibold text-foreground">Case Results</h3>
+          <h3 className="text-sm font-semibold text-foreground">{t('evolution.caseResults')}</h3>
           <span className="text-muted-foreground">
             {t('evolution.totalCases', { count: caseResults.length })}
           </span>
@@ -257,19 +259,19 @@ export default function CaseResultsGrid({
         </div>
         <div className="flex h-1.5 overflow-hidden rounded-full bg-border/50 mt-2">
           <div
-            className="bg-score-positive transition-[width]"
+            className="bg-score-positive transition-[width] motion-reduce:transition-none"
             style={{ width: `${passRate}%` }}
           />
           <div
-            className="bg-score-negative transition-[width]"
+            className="bg-score-negative transition-[width] motion-reduce:transition-none"
             style={{ width: `${100 - passRate}%` }}
           />
         </div>
       </div>
 
       {/* Table */}
-      <div>
-        <table className="w-full">
+      <div className="overflow-x-auto">
+        <table className="min-w-[44rem] w-full">
           <thead>
             <tr className="bg-muted">
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -311,8 +313,10 @@ export default function CaseResultsGrid({
                       idx % 2 === 0 ? 'bg-card/50' : 'bg-background/30'
                     } hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background`}
                   >
-                    <td className="px-4 py-3 text-sm text-foreground" title={c.caseId}>
-                      {caseNames?.get(c.caseId) ?? c.caseId}
+                    <td className="max-w-52 px-4 py-3 text-sm text-foreground">
+                      <span className="block truncate" title={caseNames?.get(c.caseId) ?? c.caseId}>
+                        {caseNames?.get(c.caseId) ?? c.caseId}
+                      </span>
                     </td>
                     <td className="px-4 py-3">
                       <span
@@ -336,7 +340,7 @@ export default function CaseResultsGrid({
                     </td>
                     <td className="px-4 py-3 text-sm text-muted-foreground" title={c.reason}>
                       <span className={`mr-1 font-semibold ${c.passed ? 'text-score-positive' : 'text-score-negative'}`}>
-                        {c.passed ? '[PASS]' : '[FAIL]'}
+                        [{c.passed ? t('evolution.pass') : t('evolution.fail')}]
                       </span>
                       {truncate(c.reason, 50)}
                     </td>

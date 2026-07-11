@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
@@ -10,6 +10,7 @@ import pytest
 from api.evaluation.validator import TemplateValidator
 from api.evolution.models import Candidate
 from api.evolution.mutator import StructuralMutator
+from api.gateway.budgeted_provider import BudgetedProvider
 from api.gateway.cost import CostTracker
 from api.types import LLMResponse, ModelRole
 
@@ -77,7 +78,7 @@ def _make_llm_response(content: str) -> LLMResponse:
         input_tokens=100,
         output_tokens=50,
         cost_usd=0.001,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
 
 
@@ -241,10 +242,10 @@ class TestCostAndLineage:
     """Tests for cost tracking and parent lineage."""
 
     @pytest.mark.asyncio
-    async def test_cost_tracker_records_call(
+    async def test_plain_provider_preserves_direct_cost_tracking(
         self, mutator, mock_client, cost_tracker, sample_candidate, anchor_variables
     ):
-        """Cost tracker has record of the meta-model call."""
+        """A directly constructed mutator records its plain-provider response."""
         restructured = "# Reordered\n{{ domain }} - {{ input }} - {{ output_format }}"
         mock_client.chat_completion.return_value = _make_llm_response(
             f"<revised_template>\n{restructured}\n</revised_template>"
@@ -444,3 +445,39 @@ class TestMutationPromptIncludesVariables:
         assert "domain" in prompt_content
         assert "input" in prompt_content
         assert "output_format" in prompt_content
+
+
+@pytest.mark.asyncio
+async def test_wrapped_mutator_records_response_exactly_once(
+    sample_candidate, anchor_variables, validator, meta_model
+):
+    inner = AsyncMock()
+    restructured = "# Reordered\n{{ domain }} - {{ input }} - {{ output_format }}"
+    inner.chat_completion.return_value = _make_llm_response(
+        f"<revised_template>{restructured}</revised_template>"
+    )
+    tracker = CostTracker()
+    mutator = StructuralMutator(
+        client=BudgetedProvider(inner, tracker),
+        cost_tracker=tracker,
+        validator=validator,
+        meta_model=meta_model,
+    )
+
+    await mutator.mutate(sample_candidate, sample_candidate.template, anchor_variables)
+
+    assert inner.chat_completion.await_count == 1
+    assert tracker.summary()["total_calls"] == 1
+
+
+def test_wrapped_mutator_rejects_mismatched_cost_tracker(validator, meta_model):
+    wrapped_tracker = CostTracker()
+    client = BudgetedProvider(AsyncMock(), wrapped_tracker)
+
+    with pytest.raises(ValueError, match="same CostTracker"):
+        StructuralMutator(
+            client=client,
+            cost_tracker=CostTracker(),
+            validator=validator,
+            meta_model=meta_model,
+        )

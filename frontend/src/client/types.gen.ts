@@ -313,9 +313,25 @@ export type EvolutionRunRequest = {
      */
     structural_mutation_probability?: number | null;
     /**
-     * N Seq
+     * Evolution Profile
      */
-    n_seq?: number | null;
+    evolution_profile?: 'cost_controlled' | 'paper_reference';
+    /**
+     * Rcc Rounds
+     */
+    rcc_rounds?: number | null;
+    /**
+     * Retain Intermediate Children
+     */
+    retain_intermediate_children?: boolean | null;
+    /**
+     * Max Retries
+     */
+    max_retries?: number | null;
+    /**
+     * Promotions Per Island
+     */
+    promotions_per_island?: number | null;
     /**
      * Population Cap
      */

@@ -1,9 +1,4 @@
-"""SQLAlchemy 2.0 ORM models for Helix database tables.
-
-Uses Mapped[] + mapped_column() style following diga_eval conventions.
-Defines 10 tables: evolution_runs, llm_call_records, settings, prompt_configs,
-presets, playground_variables, personas, tool_format_guides, prompts, test_cases.
-"""
+"""SQLAlchemy 2.0 declarative models using Mapped and mapped_column."""
 
 from datetime import datetime
 from typing import Any
@@ -331,6 +326,7 @@ class TestCaseRecord(Base):
         expected_output: Optional expected output for scoring.
         tier: Priority tier string (critical, normal, low).
         tags: Searchable tags for filtering and grouping.
+        source_metadata: Generic provenance metadata for imported cases.
         created_at: Timestamp when the case was created.
     """
 
@@ -346,6 +342,7 @@ class TestCaseRecord(Base):
     expected_output: Mapped[dict | None] = mapped_column(JSON)
     tier: Mapped[str] = mapped_column(String(20), nullable=False, default="normal")
     tags: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    source_metadata: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

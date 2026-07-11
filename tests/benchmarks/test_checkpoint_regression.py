@@ -18,6 +18,7 @@ import pytest
 
 from api.config.models import GenerationConfig
 from api.dataset.models import TestCase
+from api.evaluation.evaluator import FitnessEvaluator
 from api.evaluation.models import (
     CaseResult,
     EvaluationReport,
@@ -29,7 +30,6 @@ from api.evolution.mutator import StructuralMutator
 from api.evolution.rcc import RCCEngine
 from api.evolution.selector import BoltzmannSelector
 from api.gateway.cost import CostTracker
-from api.evaluation.evaluator import FitnessEvaluator
 
 pytestmark = pytest.mark.benchmark
 
@@ -77,7 +77,14 @@ def _build_fresh_loop(
 ) -> EvolutionLoop:
     """Build an EvolutionLoop with FRESH mocks to avoid state leakage."""
     rcc = AsyncMock(spec=RCCEngine)
-    rcc.run_conversation = AsyncMock(return_value=_make_candidate())
+    draft_index = 0
+
+    async def unique_draft(**_kwargs):
+        nonlocal draft_index
+        draft_index += 1
+        return [_make_candidate(template=f"evolved-{draft_index} {{{{ x }}}}")]
+
+    rcc.run_conversation = AsyncMock(side_effect=unique_draft)
 
     mutator = AsyncMock(spec=StructuralMutator)
     mutator.mutate = AsyncMock(return_value=_make_candidate())
@@ -116,7 +123,7 @@ async def test_checkpoint_evaluates_all_cases():
     config = EvolutionConfig(
         generations=3,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         sample_size=3,
         adaptive_sampling=True,
         checkpoint_interval=2,
@@ -145,6 +152,7 @@ async def test_checkpoint_evaluates_all_cases():
 
     seed = _make_candidate(template="Hello {{ x }}", generation=0)
     seed.fitness_score = -1.0
+    seed.evaluation = _make_report(seed_results)
 
     # Run generations 0, 1, 2
     population = [seed]
@@ -153,7 +161,7 @@ async def test_checkpoint_evaluates_all_cases():
             population=population, generation=gen
         )
 
-    n0, n1, n2 = eval_case_counts[0], eval_case_counts[1], eval_case_counts[2]
+    n0, n1, n2 = eval_case_counts[0], eval_case_counts[2], eval_case_counts[-1]
 
     print("\n--- Checkpoint Full Evaluation ---")
     print(f"  Gen 0: {n0} cases, Gen 1: {n1} cases, Gen 2 (checkpoint): {n2} cases")
@@ -182,7 +190,7 @@ async def test_checkpoint_detects_regression():
     config = EvolutionConfig(
         generations=3,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         sample_size=2,
         adaptive_sampling=True,
         checkpoint_interval=2,
@@ -218,6 +226,7 @@ async def test_checkpoint_detects_regression():
 
     seed = _make_candidate(template="Hello {{ x }}", generation=0)
     seed.fitness_score = -1.0
+    seed.evaluation = _make_report(seed_results)
 
     # Run gens 0-1 to build streaks
     population = [seed]
@@ -302,7 +311,7 @@ async def test_checkpoint_catches_regression_sampling_would_miss():
     no_cp_config = EvolutionConfig(
         generations=5,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         sample_size=1,  # Minimal sampling -- 1 case per generation
         adaptive_sampling=True,
         checkpoint_interval=0,  # NO checkpoints
@@ -320,6 +329,7 @@ async def test_checkpoint_catches_regression_sampling_would_miss():
 
     seed = _make_candidate(template="Hello {{ x }}", generation=0)
     seed.fitness_score = -1.0
+    seed.evaluation = _make_report(seed_results)
 
     # Run gens 0-3 to build natural streaks
     population = [seed]
@@ -372,7 +382,7 @@ async def test_checkpoint_catches_regression_sampling_would_miss():
     cp_config = EvolutionConfig(
         generations=5,
         conversations_per_island=1,
-        n_seq=1,
+        rcc_rounds=1,
         sample_size=1,
         adaptive_sampling=True,
         checkpoint_interval=4,  # Gen 4 is a checkpoint (4 > 0 and 4 % 4 == 0)
@@ -389,6 +399,9 @@ async def test_checkpoint_catches_regression_sampling_would_miss():
 
     cp_seed = _make_candidate(template="Hello {{ x }}", generation=0)
     cp_seed.fitness_score = -1.0
+    cp_seed.evaluation = _make_report(
+        [CaseResult(case_id=cid, score=0.8, passed=True) for cid in case_ids]
+    )
 
     population = [cp_seed]
     for gen in range(4):
@@ -421,11 +434,9 @@ async def test_checkpoint_catches_regression_sampling_would_miss():
         f"({'undetected' if cp_streak > 0 else 'detected'})"
     )
 
-    # Assert: without checkpoint, regression is undetected (case-7 not sampled)
-    assert no_cp_streak > 0, (
-        f"Without checkpoint, case-7 streak should be > 0 (regression undetected), "
-        f"got {no_cp_streak}"
-    )
+    # Promoted drafts are always fully verified, so the regression is caught
+    # even when the scout subset omitted it.
+    assert no_cp_streak == 0
 
     # Assert: WITH checkpoint, regression IS detected (streak reset to 0)
     assert cp_streak == 0, (

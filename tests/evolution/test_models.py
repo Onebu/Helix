@@ -13,7 +13,6 @@ from api.evolution.models import (
 )
 from api.exceptions import BudgetExhaustedError, GenePrompterError
 
-
 # --- Candidate Tests ---
 
 
@@ -79,12 +78,73 @@ class TestCandidate:
 class TestEvolutionConfig:
     """Tests for the EvolutionConfig model."""
 
-    def test_defaults_match_mind_evolution_paper(self):
-        """EvolutionConfig defaults should follow Mind Evolution paper values."""
+    def test_cost_controlled_profile_is_explicit_default(self):
+        config = EvolutionConfig()
+        assert config.evolution_profile == "cost_controlled"
+        assert config.rcc_rounds == 3
+        assert config.retain_intermediate_children is False
+        assert config.max_retries == 3
+        assert config.promotions_per_island == 1
+        assert config.population_cap == 10
+
+    def test_paper_reference_profile_resolves_paper_scale(self):
+        config = EvolutionConfig(evolution_profile="paper_reference")
+        assert config.rcc_rounds == 4
+        assert config.retain_intermediate_children is True
+        assert config.max_retries == 5
+        assert config.population_cap is None
+
+    def test_paper_reference_profile_preserves_explicit_overrides(self):
+        config = EvolutionConfig(
+            evolution_profile="paper_reference",
+            rcc_rounds=2,
+            retain_intermediate_children=False,
+            max_retries=1,
+            population_cap=7,
+        )
+        assert config.rcc_rounds == 2
+        assert config.retain_intermediate_children is False
+        assert config.max_retries == 1
+        assert config.population_cap == 7
+
+    def test_legacy_n_seq_input_maps_to_rcc_rounds(self):
+        config = EvolutionConfig.model_validate({"n_seq": 2})
+        assert config.rcc_rounds == 2
+        assert "n_seq" not in config.model_dump()
+
+    def test_paper_reference_preserves_explicit_legacy_n_seq(self):
+        config = EvolutionConfig.model_validate(
+            {"evolution_profile": "paper_reference", "n_seq": 2}
+        )
+        assert config.rcc_rounds == 2
+
+    def test_explicit_null_population_cap_is_preserved(self):
+        config = EvolutionConfig(population_cap=None)
+        assert config.population_cap is None
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("rcc_rounds", 0),
+            ("max_retries", 0),
+            ("promotions_per_island", 0),
+            ("population_cap", 0),
+            ("n_seed_variants", -1),
+            ("budget_cap_usd", -0.01),
+            ("sample_size", 0),
+            ("sample_ratio", 0.0),
+        ],
+    )
+    def test_positive_work_bounds(self, field, value):
+        with pytest.raises(ValidationError):
+            EvolutionConfig(**{field: value})
+
+    def test_cost_controlled_defaults_preserve_existing_values(self):
+        """The default profile preserves the existing cost-controlled values."""
         config = EvolutionConfig()
         assert config.generations == 10
         assert config.conversations_per_island == 5
-        assert config.n_seq == 3
+        assert config.rcc_rounds == 3
         assert config.n_parents == 5
         assert config.temperature == 1.0
         assert config.structural_mutation_probability == 0.2
@@ -97,7 +157,7 @@ class TestEvolutionConfig:
         config = EvolutionConfig(
             generations=20,
             conversations_per_island=10,
-            n_seq=5,
+            rcc_rounds=5,
             n_parents=3,
             temperature=0.5,
             structural_mutation_probability=0.3,
@@ -123,8 +183,8 @@ class TestEvolutionConfig:
         with pytest.raises(ValidationError):
             EvolutionConfig(conversations_per_island=0)
 
-    def test_validation_rejects_zero_n_seq(self):
-        """n_seq must be >= 1."""
+    def test_validation_rejects_zero_legacy_n_seq(self):
+        """The n_seq compatibility input must be >= 1."""
         with pytest.raises(ValidationError):
             EvolutionConfig(n_seq=0)
 

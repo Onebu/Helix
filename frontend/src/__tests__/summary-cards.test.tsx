@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import SummaryCards from '../components/evolution/SummaryCards'
+import IslandsSummary from '../components/evolution/IslandsSummary'
 import type { SummaryData } from '../types/evolution'
+import es from '../locales/es/common.json'
+import zh from '../locales/zh/common.json'
 
 const sampleSummary: SummaryData = {
   bestFitness: 0.8765,
@@ -120,5 +123,29 @@ describe('SummaryCards', () => {
       // The improvement value is a dash
       expect(improvementCard?.parentElement?.textContent).toContain('\u2014')
     })
+  })
+})
+
+describe('Workbench summary hardening', () => {
+  it('reflows island summaries from one to two to four columns', () => {
+    const { container } = render(
+      <IslandsSummary
+        candidates={[]}
+        migrations={[]}
+        islandCount={4}
+        status="complete"
+      />,
+    )
+
+    expect(container.querySelector('.grid')).toHaveClass(
+      'grid-cols-1',
+      'sm:grid-cols-2',
+      'xl:grid-cols-4',
+    )
+  })
+
+  it('keeps the stop reason label translated in every shipped locale', () => {
+    expect((es.evolution as Record<string, string>).stopReason).toBe('Motivo de finalización')
+    expect((zh.evolution as Record<string, string>).stopReason).toBe('停止原因')
   })
 })
